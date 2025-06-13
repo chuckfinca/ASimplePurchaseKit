@@ -14,7 +14,7 @@ public enum PurchaseError: Error, LocalizedError, Equatable {
     case purchasePending
     case purchaseCancelled
     case purchaseFailed(SKError.Code)
-    case verificationFailed(VerificationResult<Any>.VerificationError)
+    case verificationFailed(VerificationResult<Transaction>.VerificationError)
     case userNotEntitled
     case missingEntitlement
     

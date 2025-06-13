@@ -1,0 +1,70 @@
+{
+  "identifier": "A51B2A7B",
+  "products": [
+    {
+      "displayPrice": "99.99",
+      "familyShareable": false,
+      "internalID": "D1E3F4A5",
+      "localizations": [
+        {
+          "description": "Unlock all Pro features forever with a single purchase.",
+          "displayName": "Lifetime Pro",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.asimplepurchasekit.pro.lifetime",
+      "referenceName": "Lifetime Pro Access",
+      "type": "NonConsumable"
+    }
+  ],
+  "subscriptionGroups": [
+    {
+      "id": "C6B7A8D9",
+      "name": "Pro Subscriptions",
+      "subscriptions": [
+        {
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "internalID": "E9F8A7B6",
+          "introductoryOffer": {
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W",
+            "type": "introductory"
+          },
+          "localizations": [
+            {
+              "description": "Unlock all Pro features with a monthly subscription.",
+              "displayName": "Monthly Pro",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.asimplepurchasekit.pro.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Monthly Pro",
+          "type": "RecurringSubscription"
+        },
+        {
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "internalID": "B5A4C3D2",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Get a full year of Pro features at a discounted price.",
+              "displayName": "Yearly Pro",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.asimplepurchasekit.pro.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Yearly Pro",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 2,
+    "minor": 0
+  }
+}

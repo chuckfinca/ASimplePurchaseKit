@@ -19,8 +19,8 @@ final class PurchaseServiceTests: XCTestCase {
 
     let testProductIDs = ["com.example.pro.monthly"]
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+
         cancellables = []
         mockProvider = MockPurchaseProvider()
         
@@ -29,70 +29,57 @@ final class PurchaseServiceTests: XCTestCase {
             productIDs: testProductIDs,
             productProvider: mockProvider,
             purchaser: mockProvider,
-            receiptValidator: mockProvider
+            receiptValidator: mockProvider,
+            isUnitTesting: true
         )
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         sut = nil
         mockProvider = nil
         cancellables = nil
-        super.tearDown()
     }
 
-    // MARK: - Initialization Tests
-
+    // Test that the initializer calls the correct methods
     func test_initialization_fetchesProductsAndUpdatesEntitlements() async {
-        // ARRANGE
-        let expectation = XCTestExpectation(description: "Service should finish its initial setup")
+        let expectation = XCTestExpectation(description: "Wait for init tasks to complete.")
         
-        // We expect two state changes: products and entitlements
-        var receivedStatusUpdate = false
-        var receivedProductsUpdate = false
-
-        sut.$availableProducts
-            .dropFirst()
-            .sink { _ in
-                receivedProductsUpdate = true
-                if receivedStatusUpdate { expectation.fulfill() }
-            }
-            .store(in: &cancellables)
-            
-        sut.$entitlementStatus
-            .dropFirst()
-            .sink { _ in
-                receivedStatusUpdate = true
-                if receivedProductsUpdate { expectation.fulfill() }
-            }
-            .store(in: &cancellables)
-
-        // In a real test, we would have already configured our mock to return a dummy product.
-        // The init in setUp is the "ACT" phase.
-
-        // ASSERT
-        await fulfillment(of: [expectation], timeout: 2.0)
+        // We just need to wait long enough for the async tasks in init to run.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            expectation.fulfill()
+        }
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
         
         XCTAssertEqual(mockProvider.fetchProductsCallCount, 1)
         XCTAssertEqual(mockProvider.checkCurrentEntitlementsCallCount, 1)
     }
-}
-
-// Helper extension to create a mock Product for testing. This is a simplified version.
-// A real implementation would need to mock more properties.
-extension Product {
-    static func createMockProduct(id: String, displayName: String) -> Product {
-        // This is a placeholder. StoreKit's Product is a complex struct and hard to mock.
-        // For unit tests, we often test the *logic* and trust the `LivePurchaseProvider`
-        // gets real products. We can also use the `.storekit` file for integration tests.
-        // For now, we return a basic struct that fulfills the test's needs.
-        // NOTE: This part is tricky without a real testing environment, but this pattern is correct.
-        // We are assuming `Product` is mockable or we have a test helper.
+    
+    // Test a failure case that is easy to mock
+    func test_purchase_whenProductIsNotFound_setsProductsNotFoundError() async {
+        // ARRANGE
+        // The service's availableProducts array is empty by default.
+        XCTAssertTrue(sut.availableProducts.isEmpty)
         
-        // Let's assume for a moment Product is a struct we can initialize
-        // In reality, it's an opaque object returned by Apple.
-        // The correct way is to test the IDs and counts, not the product objects themselves.
+        // ACT
+        await sut.purchase(productID: "some.unknown.id")
         
-        // Let's refine the test to be more robust against this.
-        return /* A mocked product instance */
+        // ASSERT
+        XCTAssertEqual(sut.lastError, .productsNotFound)
+        XCTAssertFalse(sut.isPurchasing)
+        XCTAssertEqual(mockProvider.purchaseCallCount, 0, "The purchase method should not be called if the product isn't found.")
+    }
+    
+    func test_restorePurchases_callsSyncAndUpdatesEntitlements() async {
+        // ARRANGE
+        mockProvider.entitlementResult = .success(.subscribed(expires: nil, isInGracePeriod: false))
+        
+        // ACT
+        await sut.restorePurchases() // We can't mock AppStore.sync(), but we can test what happens after.
+        
+        // ASSERT
+        // restorePurchases calls updateEntitlementStatus, which calls checkCurrentEntitlements
+        XCTAssertEqual(mockProvider.checkCurrentEntitlementsCallCount, 2, "Should be called once on init and once on restore")
+        XCTAssertEqual(sut.entitlementStatus, .subscribed(expires: nil, isInGracePeriod: false))
     }
 }

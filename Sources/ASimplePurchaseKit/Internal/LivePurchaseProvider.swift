@@ -14,7 +14,7 @@ import StoreKit
 internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
 
     // MARK: - ProductProvider
-    
+
     /// Fetches product information from the App Store.
     func fetchProducts(for ids: [String]) async throws -> [Product] {
         do {
@@ -30,9 +30,9 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
             throw error
         }
     }
-    
+
     // MARK: - Purchaser
-    
+
     /// Initiates the purchase flow for a given product.
     func purchase(_ product: Product) async throws -> Transaction {
         let result = try await product.purchase()
@@ -51,24 +51,24 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
                 print("LivePurchaseProvider: Purchase failed verification: \(verificationError.localizedDescription)")
                 throw PurchaseError.verificationFailed(verificationError)
             }
-            
+
         case .pending:
             // The purchase requires approval (e.g., Ask to Buy). The app should wait for a transaction update.
             print("LivePurchaseProvider: Purchase is pending user action.")
             throw PurchaseError.purchasePending
-            
+
         case .userCancelled:
             // The user explicitly cancelled the purchase.
             print("LivePurchaseProvider: User cancelled purchase.")
             throw PurchaseError.purchaseCancelled
-            
+
         @unknown default:
             throw PurchaseError.unknown
         }
     }
-    
+
     // MARK: - ReceiptValidator
-    
+
     /// Checks all of the user's current entitlements to determine their access level.
     /// This is the source of truth for "is the user subscribed?".
     func checkCurrentEntitlements() async throws -> EntitlementStatus {
@@ -81,7 +81,7 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
                 // Ignore unverified transactions for security.
                 continue
             }
-            
+
             // For this implementation, we assume any valid transaction is the one we care about.
             // A more complex app could check `productID` for different subscription tiers.
             // We'll just find the most recent one.
@@ -93,48 +93,44 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
                 highestPriorityTransaction = transaction
             }
         }
-        
+
         guard let finalTransaction = highestPriorityTransaction else {
             // No active entitlements were found for the user.
             print("LivePurchaseProvider: No active entitlements found.")
             return .notSubscribed
         }
-        
+
         // We found a valid entitlement. Now, convert its state into our EntitlementStatus enum.
         return try await self.validate(transaction: finalTransaction)
     }
-    
+
     /// Converts a single verified transaction into a specific entitlement status.
     func validate(transaction: Transaction) async throws -> EntitlementStatus {
-        // A transaction is not an entitlement if it has been revoked or is for an upgraded product.
+        // A transaction is not an entitlement if it has been revoked by Apple or is for an upgraded product.
         if transaction.revocationDate != nil || transaction.isUpgraded {
             return .notSubscribed
         }
-        
+
         switch transaction.productType {
         case .autoRenewable:
-            // This is a subscription. We need to check its current state.
-            guard let subInfo = transaction.subscriptionInfo,
-                  let state = subInfo.state else {
-                // Should not happen for an auto-renewable product with a verified transaction.
+            // For auto-renewable subscriptions, the source of truth is the expiration date.
+            // StoreKit's `currentEntitlements` will provide a transaction if it's active.
+            // This includes active subscriptions and those in a grace period.
+            guard let expirationDate = transaction.expirationDate else {
+                // A verified auto-renewable subscription from `currentEntitlements` must have an expiration date.
+                // If it doesn't, we can't determine the status.
                 return .unknown
             }
-            
-            switch state {
-            case .subscribed:
-                return .subscribed(expires: transaction.expirationDate, isInGracePeriod: false)
-            case .inGracePeriod:
-                return .subscribed(expires: transaction.expirationDate, isInGracePeriod: true)
-            case .expired, .inBillingRetryPeriod, .revoked:
-                return .notSubscribed
-            @unknown default:
-                return .unknown
-            }
-            
-        case .nonConsumable, .nonRenewing:
-            // These products grant a lifetime entitlement once purchased.
+
+            // If the date is in the past, it implies the user is in a grace period but still has access.
+            let isInGracePeriod = expirationDate < Date()
+
+            return .subscribed(expires: expirationDate, isInGracePeriod: isInGracePeriod)
+
+        case .nonConsumable, .nonRenewable:
+            // These products grant a lifetime entitlement once purchased. They do not expire.
             return .subscribed(expires: nil, isInGracePeriod: false)
-            
+
         default:
             // Consumable products do not grant an ongoing entitlement.
             return .notSubscribed

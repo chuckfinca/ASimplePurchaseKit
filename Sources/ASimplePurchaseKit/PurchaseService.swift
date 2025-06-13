@@ -46,17 +46,20 @@ public class PurchaseService: ObservableObject {
         productIDs: [String],
         productProvider: ProductProvider,
         purchaser: Purchaser,
-        receiptValidator: ReceiptValidator
+        receiptValidator: ReceiptValidator,
+        isUnitTesting: Bool = false
     ) {
         self.productIDs = productIDs
         self.productProvider = productProvider
         self.purchaser = purchaser
         self.receiptValidator = receiptValidator
 
-        // ** CRITICAL: Start the transaction listener that runs for the app's lifetime **
-        self.transactionListener = Task.detached { [weak self] in
-            for await result in Transaction.updates {
-                await self?.handle(transactionResult: result)
+        // Only start the real transaction listener if we are NOT in a unit test.
+        if !isUnitTesting { // <-- ADD THIS CHECK
+            self.transactionListener = Task.detached { [weak self] in
+                for await result in Transaction.updates {
+                    await self?.handle(transactionResult: result)
+                }
             }
         }
 
@@ -84,9 +87,16 @@ public class PurchaseService: ObservableObject {
     }
 
     /// Initiates a purchase for a given product and handles the result.
-    public func purchase(_ product: Product) async {
+    public func purchase(productID: String) async {
         guard !isPurchasing else {
             self.lastError = .purchasePending
+            return
+        }
+
+        // Find the product from our own state
+        guard let productToPurchase = availableProducts.first(where: { $0.id == productID }) else {
+            self.lastError = .productsNotFound
+            print("PurchaseService: Attempted to purchase unknown productID: \(productID)")
             return
         }
 
@@ -94,9 +104,10 @@ public class PurchaseService: ObservableObject {
         self.lastError = nil
 
         do {
-            let transaction = try await purchaser.purchase(product)
+            // Pass the *real* product object to the internal protocol
+            let transaction = try await purchaser.purchase(productToPurchase)
             self.entitlementStatus = try await receiptValidator.validate(transaction: transaction)
-            await transaction.finish() // Acknowledge the transaction
+            await transaction.finish()
         } catch let e as PurchaseError {
             self.lastError = e
         } catch {
@@ -108,14 +119,18 @@ public class PurchaseService: ObservableObject {
 
     /// Asks the App Store to sync the latest transactions for the user.
     public func restorePurchases() async {
-        do {
-            try await AppStore.sync()
-            // The transaction listener will automatically handle any new transactions.
-            // We can also trigger a manual check to update the state immediately.
-            await updateEntitlementStatus()
-        } catch {
-            self.lastError = .unknown
+        // Only call the real AppStore.sync() if we are NOT in a unit test.
+        if let listener = self.transactionListener { // A good proxy for not being in a unit test
+            do {
+                try await AppStore.sync()
+            } catch {
+                self.lastError = .unknown
+                return // Exit early if sync fails
+            }
         }
+
+        // The rest of the logic can run in both unit and integration tests.
+        await updateEntitlementStatus()
     }
 
     /// Manually triggers a check of the user's current entitlements.
