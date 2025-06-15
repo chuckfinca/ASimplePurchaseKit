@@ -1,0 +1,70 @@
+# project.yml (at the ROOT of the repository)
+
+name: ASimplePurchaseKit
+
+options:
+  bundleIdPrefix: io.appsimple
+  deploymentTarget:
+    iOS: "16.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 3E5665FPU5
+    CODE_SIGN_STYLE: Automatic
+
+packages:
+  ASimplePurchaseKit:
+    path: .
+
+targets:
+  TestHostApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: PurchaseKitTestHarness/PurchaseKitTestHarness
+    info:
+      path: PurchaseKitTestHarness/PurchaseKitTestHarness/Info.plist
+      properties:
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp
+    dependencies:
+      - package: ASimplePurchaseKit
+    resources:
+      - path: PurchaseKitTestHarness/Tests/Products.storekit
+
+  TestHostAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PurchaseKitTestHarness/Tests
+    resources:
+      - path: PurchaseKitTestHarness/Tests/Products.storekit
+    info:
+      path: PurchaseKitTestHarness/Tests/Info.plist 
+    settings:
+      base:
+        # THIS IS THE KEY CHANGE - Test bundle ID must be a child of app bundle ID
+        PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp.Tests
+        # Also add these for proper test host configuration
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/TestHostApp.app/TestHostApp
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: TestHostApp
+      - sdk: StoreKit.framework
+        weak: true
+
+schemes:
+  TestHostApp:
+    build:
+      targets:
+        TestHostApp: all
+        TestHostAppTests: testing
+    test:
+      targets:
+        - TestHostAppTests
+      # options:
+      #   # Try with the relative path from project root
+      #   storeKitConfiguration: PurchaseKitTestHarness/Tests/Products.storekit

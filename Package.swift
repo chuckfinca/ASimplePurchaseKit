@@ -28,10 +28,6 @@ let package = Package(
         .testTarget(
             name: "ASimplePurchaseKitTests",
             dependencies: ["ASimplePurchaseKit"],
-            resources: [
-                // This makes the .storekit file available to your tests
-                .copy("Products.storekit")
-            ]
         ),
     ]
 )

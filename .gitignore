@@ -6,6 +6,9 @@ DerivedData/
 .swiftpm
 .netrc
 
+*.xcodeproj
+*.xcworkspace
+*info.plist
 
 
 ## Local dev

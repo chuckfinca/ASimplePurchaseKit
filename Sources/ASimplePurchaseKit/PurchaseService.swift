@@ -37,7 +37,8 @@ public class PurchaseService: ObservableObject {
             productIDs: config.productIDs,
             productProvider: liveProvider,
             purchaser: liveProvider,
-            receiptValidator: liveProvider
+            receiptValidator: liveProvider,
+            isUnitTesting: config.isUnitTesting
         )
     }
 
