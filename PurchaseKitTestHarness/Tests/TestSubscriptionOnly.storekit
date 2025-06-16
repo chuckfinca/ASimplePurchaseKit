@@ -1,0 +1,51 @@
+{
+  "identifier": "SUBS_ONLY_CONFIG_V1",
+  "products": [],
+  "subscriptionGroups": [
+    {
+      "id": "PRO_SUBS_GROUP_01",
+      "name": "Pro Subscriptions",
+      "subscriptions": [
+        {
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "internalID": "MONTHLY_PRO_ID_01",
+          "introductoryOffer": {
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W",
+            "type": "introductory"
+          },
+          "localizations": [
+            {
+              "description": "Unlock all Pro features with a monthly subscription.",
+              "displayName": "Monthly Pro",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.asimplepurchasekit.pro.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Monthly Pro",
+          "type": "RecurringSubscription"
+        },
+        {
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "internalID": "YEARLY_PRO_ID_01",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Get a full year of Pro features at a discounted price.",
+              "displayName": "Yearly Pro",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.asimplepurchasekit.pro.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Yearly Pro",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": { "major": 1, "minor": 0 }
+}

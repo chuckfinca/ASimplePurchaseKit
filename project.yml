@@ -36,25 +36,25 @@ targets:
       - path: PurchaseKitTestHarness/Tests/Products.storekit
 
   TestHostAppTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: PurchaseKitTestHarness/Tests
-    resources:
-      - path: PurchaseKitTestHarness/Tests/Products.storekit
-    info:
-      path: PurchaseKitTestHarness/Tests/Info.plist 
-    settings:
-      base:
-        # THIS IS THE KEY CHANGE - Test bundle ID must be a child of app bundle ID
-        PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp.Tests
-        # Also add these for proper test host configuration
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/TestHostApp.app/TestHostApp
-        BUNDLE_LOADER: $(TEST_HOST)
-    dependencies:
-      - target: TestHostApp
-      - sdk: StoreKit.framework
-        weak: true
+      type: bundle.unit-test
+      platform: iOS
+      sources:
+        - path: PurchaseKitTestHarness/Tests
+      resources: # Ensure this section looks like this
+        - path: PurchaseKitTestHarness/Tests/Products.storekit          # Keep original
+        - path: PurchaseKitTestHarness/Tests/TestLifetimeOnly.storekit # Add this
+        - path: PurchaseKitTestHarness/Tests/TestSubscriptionOnly.storekit # Add this
+      info:
+        path: PurchaseKitTestHarness/Tests/Info.plist
+      settings:
+        base:
+          PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp.Tests
+          TEST_HOST: $(BUILT_PRODUCTS_DIR)/TestHostApp.app/TestHostApp
+          BUNDLE_LOADER: $(TEST_HOST)
+      dependencies:
+        - target: TestHostApp
+        - sdk: StoreKit.framework
+          # weak: true
 
 schemes:
   TestHostApp:
