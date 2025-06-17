@@ -10,11 +10,10 @@
           "displayPrice": "0.99",
           "familyShareable": false,
           "internalID": "MINIMAL_SUB_ID_01",
-          "productID": "com.asimplepurchasekit.pro.minimal", // Use a NEW, unique ID
+          "productID": "com.asimplepurchasekit.pro.minimal",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Minimal Monthly",
           "type": "RecurringSubscription"
-          // NO introductory offer, minimal localizations if any
         }
       ]
     }

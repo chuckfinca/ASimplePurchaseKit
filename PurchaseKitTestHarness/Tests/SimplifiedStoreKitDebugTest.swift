@@ -16,93 +16,84 @@ final class SimplifiedStoreKitDebugTest: XCTestCase {
         print("\n🧪 TEST 1: Using ONLY scheme configuration (no SKTestSession)")
         print("=" * 70)
         
-        // NO SKTestSession creation - rely entirely on scheme config
-        
-        // Give StoreKit time to initialize
+        var productsFound = false
+        // Test with explicit IDs first, as this sometimes works with scheme-only
+        let explicitIDs = [
+            "com.asimplepurchasekit.pro.lifetime",
+            "com.asimplepurchasekit.pro.monthly", // Will likely not load
+            "com.asimplepurchasekit.pro.yearly"   // Will likely not load
+        ]
+
         for delay in [500, 1000, 2000, 3000] {
             print("\n⏱️  Waiting \(delay)ms...")
             try await Task.sleep(for: .milliseconds(UInt64(delay)))
             
-            let products = try await Product.products(for: [])
-            print("   Products found: \(products.count)")
-            
-            if !products.isEmpty {
-                print("   ✅ Success! Products loaded after \(delay)ms")
-                for product in products {
-                    print("      • \(product.id)")
+            // Try with explicit IDs
+            let explicitProducts = try await Product.products(for: explicitIDs)
+            print("   Products found (explicit IDs): \(explicitProducts.count)")
+            if !explicitProducts.isEmpty {
+                print("   ✅ Success with explicit IDs! Products loaded after \(delay)ms")
+                for product in explicitProducts { print("      • \(product.id)") }
+                productsFound = true
+                break // Exit loop if any products found this way
+            }
+
+            // If explicit IDs didn't work, try Product.all (less likely to work scheme-only)
+            // Only attempt Product.all if explicit IDs failed, to avoid masking the explicit ID success.
+            if !productsFound {
+                let allProducts = try await Product.products(for: []) // Product.all
+                print("   Products found (Product.all): \(allProducts.count)")
+                if !allProducts.isEmpty {
+                    print("   ✅ Success with Product.all! Products loaded after \(delay)ms")
+                    for product in allProducts { print("      • \(product.id)") }
+                    productsFound = true
+                    break
                 }
-                return
             }
         }
         
-        XCTFail("❌ No products found even after waiting")
+        XCTAssertTrue(productsFound, "❌ No products found even after waiting (scheme-only config). Check if lifetime loads with explicit IDs, or if Product.all yields results.")
     }
     
     func test_programmaticSession_only() async throws {
         print("\n🧪 TEST 2: Using ONLY programmatic SKTestSession")
         print("=" * 70)
         
-        // Find the .storekit file
         let bundle = Bundle(for: type(of: self))
-        
-        // Try multiple possible locations
-        let possiblePaths = [
-            bundle.url(forResource: "Products", withExtension: "storekit"),
-            bundle.url(forResource: "Products", withExtension: "storekit", subdirectory: "Tests"),
-            bundle.url(forResource: "Products", withExtension: "storekit", subdirectory: "PurchaseKitTestHarness/Tests"),
-        ]
-        
-        var configURL: URL? = nil
-        for path in possiblePaths {
-            if let path = path {
-                print("   Checking: \(path.lastPathComponent) at \(path.path)")
-                if FileManager.default.fileExists(atPath: path.path) {
-                    configURL = path
-                    print("   ✅ Found!")
-                    break
-                }
-            }
-        }
-        
-        guard let url = configURL else {
-            // List all resources in bundle for debugging
-            print("\n📦 All resources in test bundle:")
-            if let resourceURLs = bundle.urls(forResourcesWithExtension: nil, subdirectory: nil) {
-                for resourceURL in resourceURLs {
-                    print("   • \(resourceURL.lastPathComponent)")
-                }
-            }
+        guard let url = bundle.url(forResource: "Products", withExtension: "storekit") else {
             XCTFail("❌ Could not find Products.storekit in test bundle")
             return
         }
+        print("   Using Products.storekit at \(url.path)")
         
-        // Create session with the found URL
         let session = try SKTestSession(contentsOf: url)
-        
-        // Minimal configuration
         session.clearTransactions()
         
-        // Test with increasing delays
+        var productsFoundCount = 0
+        let idsToTest = [
+            "com.asimplepurchasekit.pro.lifetime",
+            "com.asimplepurchasekit.pro.monthly",
+            "com.asimplepurchasekit.pro.yearly"
+        ]
+
         for delay in [500, 1000, 2000, 3000] {
             print("\n⏱️  Waiting \(delay)ms after session creation...")
             try await Task.sleep(for: .milliseconds(UInt64(delay)))
             
-            // Try fetching products
-            let products = try await Product.products(for: [
-                "com.asimplepurchasekit.pro.lifetime",
-                "com.asimplepurchasekit.pro.monthly",
-                "com.asimplepurchasekit.pro.yearly"
-            ])
-            
+            let products = try await Product.products(for: idsToTest)
             print("   Products found: \(products.count)")
+            productsFoundCount = products.count
             
-            if !products.isEmpty {
-                print("   ✅ Success! Products loaded after \(delay)ms")
+            if products.count == 1 && products.first?.id == "com.asimplepurchasekit.pro.lifetime" {
+                print("   ✅ Success (P3 behavior)! Lifetime product loaded after \(delay)ms")
+                XCTAssertEqual(productsFoundCount, 1, "Expected 1 product (lifetime) from Products.storekit due to P3.")
+                return
+            } else if products.count > 0 {
+                print("   ⚠️ Found \(products.count) products from Products.storekit. P3 behavior might be different or file changed/fixed. Products: \(products.map(\.id))")
                 return
             }
         }
-        
-        XCTFail("❌ No products found even after waiting")
+        XCTFail("❌ No products found from Products.storekit even after waiting with SKTestSession. Expected at least lifetime (P3). Actual: \(productsFoundCount)")
     }
     
     func test_validateBundleResources() throws {
@@ -114,27 +105,73 @@ final class SimplifiedStoreKitDebugTest: XCTestCase {
         print("Test bundle path: \(bundle.bundlePath)")
         print("\nSearching for .storekit files...")
         
-        // Method 1: Direct resource lookup
-        if let urls = bundle.urls(forResourcesWithExtension: "storekit", subdirectory: nil) {
-            print("\nFound \(urls.count) .storekit files:")
-            for url in urls {
-                print("  • \(url.lastPathComponent) at: \(url.path)")
-                
-                // Validate the file can be read
-                if let data = try? Data(contentsOf: url),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("    ✅ Valid JSON with \((json["products"] as? [Any])?.count ?? 0) products")
+        let storekitFiles = bundle.urls(forResourcesWithExtension: "storekit", subdirectory: nil) ?? []
+        XCTAssertFalse(storekitFiles.isEmpty, "Should find .storekit files in test bundle resources.")
+        print("\nFound \(storekitFiles.count) .storekit files:")
+
+        for url in storekitFiles {
+            print("  Validating: \(url.lastPathComponent) at: \(url.path)")
+            
+            var fileData: Data?
+            do {
+                fileData = try Data(contentsOf: url)
+            } catch {
+                XCTFail("Failed to read data for \(url.lastPathComponent): \(error)")
+                continue
+            }
+            
+            guard let data = fileData else {
+                XCTFail("Data was nil after attempting to read \(url.lastPathComponent)")
+                continue
+            }
+
+            var jsonObject: Any?
+            do {
+                jsonObject = try JSONSerialization.jsonObject(with: data)
+            } catch {
+                 XCTFail("Failed to parse JSON for \(url.lastPathComponent): \(error). File content (first 500 chars): \(String(data: data.prefix(500), encoding: .utf8) ?? "Unable to decode as UTF-8")")
+                continue
+            }
+            
+            guard let json = jsonObject as? [String: Any] else {
+                XCTFail("Parsed JSON for \(url.lastPathComponent) was not a [String: Any] dictionary.")
+                continue
+            }
+
+            let topLevelProducts = (json["products"] as? [[String: Any]]) ?? []
+            var subscriptionProductCount = 0
+            if let groups = json["subscriptionGroups"] as? [[String: Any]] {
+                for group in groups {
+                    subscriptionProductCount += (group["subscriptions"] as? [[String: Any]] ?? []).count
                 }
+            }
+            
+            print("    Successfully parsed. Top-level products: \(topLevelProducts.count), Subscription products: \(subscriptionProductCount)")
+
+            if url.lastPathComponent == "TestSubscriptionOnly.storekit" {
+                XCTAssertTrue(topLevelProducts.isEmpty, "\(url.lastPathComponent) should have 0 top-level products.")
+                XCTAssertGreaterThan(subscriptionProductCount, 0, "\(url.lastPathComponent) should have subscription products.")
+            } else if url.lastPathComponent == "TestLifetimeOnly.storekit" {
+                XCTAssertFalse(topLevelProducts.isEmpty, "\(url.lastPathComponent) should have top-level products.")
+                XCTAssertEqual(subscriptionProductCount, 0, "\(url.lastPathComponent) should have 0 subscription products.")
+            } else if url.lastPathComponent == "Products.storekit" { // Mixed
+                 XCTAssertFalse(topLevelProducts.isEmpty, "\(url.lastPathComponent) should have top-level products.")
+                 XCTAssertGreaterThan(subscriptionProductCount, 0, "\(url.lastPathComponent) should have subscription products.")
+            } else if url.lastPathComponent == "TestMinimalSubscription.storekit" {
+                 XCTAssertTrue(topLevelProducts.isEmpty, "\(url.lastPathComponent) should have 0 top-level products.")
+                 XCTAssertGreaterThan(subscriptionProductCount, 0, "\(url.lastPathComponent) should have at least one subscription product.")
             }
         }
         
-        // Method 2: File system enumeration
-        print("\nAll bundle contents:")
+        print("\nAll bundle contents (listing .storekit files via enumerator):")
         let enumerator = FileManager.default.enumerator(atPath: bundle.bundlePath)
+        var foundViaEnum = 0
         while let file = enumerator?.nextObject() as? String {
             if file.hasSuffix(".storekit") {
                 print("  📄 Found via enumeration: \(file)")
+                foundViaEnum += 1
             }
         }
+        XCTAssertEqual(foundViaEnum, storekitFiles.count, "Enumerator count should match direct lookup count for .storekit files.")
     }
 }
