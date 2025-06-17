@@ -13,14 +13,11 @@ settings:
     CODE_SIGN_STYLE: Automatic
 
 packages:
-  ASimplePurchaseKit: # This is the name of your local package, used for dependency resolution
+  ASimplePurchaseKit: # local Swift package
     path: .
-  DummyRemotePackageForTesting: # Add this section
-      url: https://github.com/johnsundell/Ink.git # Using Ink as an example
-      from: "0.1.0"
-
+  
 targets:
-  TestHostApp:
+  TestHostAppTarget:
     type: application
     platform: iOS
     sources:
@@ -33,66 +30,68 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp
+        PRODUCT_NAME: TestHostApp
     dependencies:
-      - package: ASimplePurchaseKit # TestHostApp depends on the package product
+      - package: ASimplePurchaseKit   # dependency on the local package
+        product: ASimplePurchaseKit # TestHostApp depends on the package product
     resources:
       - path: PurchaseKitTestHarness/Tests/Products.storekit
 
-  TestHostAppTests:
-      type: bundle.unit-test
-      platform: iOS
-      sources:
-        - path: PurchaseKitTestHarness/Tests
-      resources: 
-        - path: PurchaseKitTestHarness/Tests/Products.storekit          
-        - path: PurchaseKitTestHarness/Tests/TestLifetimeOnly.storekit 
-        - path: PurchaseKitTestHarness/Tests/TestSubscriptionOnly.storekit
-        - path: PurchaseKitTestHarness/Tests/TestMinimalSubscription.storekit
-      info:
-        path: PurchaseKitTestHarness/Tests/Info.plist
-      settings:
-        base:
-          PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp.Tests
-          TEST_HOST: $(BUILT_PRODUCTS_DIR)/TestHostApp.app/TestHostApp
-          BUNDLE_LOADER: $(TEST_HOST)
-      dependencies:
-        - target: TestHostApp
-        - sdk: StoreKit.framework
+  TestHostAppTestsTarget:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PurchaseKitTestHarness/Tests
+    resources: 
+      - path: PurchaseKitTestHarness/Tests/Products.storekit          
+      - path: PurchaseKitTestHarness/Tests/TestLifetimeOnly.storekit 
+      - path: PurchaseKitTestHarness/Tests/TestSubscriptionOnly.storekit
+      - path: PurchaseKitTestHarness/Tests/TestMinimalSubscription.storekit
+    info:
+      path: PurchaseKitTestHarness/Tests/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.TestHostApp.Tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/TestHostApp.app/TestHostApp
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: TestHostAppTarget
+      - sdk: StoreKit.framework
+
+  ASimplePurchaseKitTestsTarget:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [] # no sources needed – tests come from SwiftPM
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.appsimple.ASimplePurchaseKitTests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/TestHostApp.app/TestHostApp
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: TestHostAppTarget
+      - sdk: StoreKit.framework
+      - package: ASimplePurchaseKit
 
 schemes:
-  TestHostApp:
+  TestHostAppScheme:
     build:
       targets:
-        TestHostApp: all
-        TestHostAppTests: testing
+        TestHostAppTarget: all
+        TestHostAppTestsTarget: testing
     test:
       targets:
-        - TestHostAppTests
-      # options:
-      #   storeKitConfiguration: PurchaseKitTestHarness/Tests/Products.storekit
-
-  # --- REVISED SCHEME FOR PACKAGE UNIT TESTS ---
-  ASimplePurchaseKit-PackageTests:
-    # Build section might not even need explicit targets if 'testables' is correctly configured
-    # to point to the package's test target.
-    # Let's try omitting explicit build targets here first, or making it very minimal.
+        - TestHostAppTestsTarget
+  ASimplePurchaseKit-UnitTestsScheme:
     build:
-      # Xcode should automatically build dependencies of the testable.
-      # If issues persist, you might need to add a target that *uses* the package,
-      # like TestHostApp, to ensure the package code is compiled.
-      # But for testing the package itself, `testables` should drive the build.
-      # Let's try with TestHostApp here to ensure the package code is built.
       targets:
-         TestHostApp: [test] # Build the app that depends on the package, including test artifacts
-    test:
-      testables:
-        # This is the key: refer to the test target *as named by the package*.
-        # XcodeGen should be able to find this test product from the package.
-        - target:
-            # The name here should be the name of the .testTarget from Package.swift
-            # which is "ASimplePurchaseKitTests"
-            name: ASimplePurchaseKitTests
-            # You might need to specify that this testable comes from the package explicitly.
-            # However, often just the name is enough if it's unique.
-            # If `name: ASimplePurchaseKitTests` alone doesn't work, we'll try qualifying it.
-      config: Debug
+        TestHostAppTarget: all
+        ASimplePurchaseKitTestsTarget: all # ensure app (and therefore package code) is built
+      test:
+        targets:
+          - target: ASimplePurchaseKitTests  # This is the name of your .testTarget in Package.swift
+            hostTarget: TestHostAppTarget   # Explicitly set the host application for these tests
+            # skipped: false (default)
+        # If you use a common StoreKit configuration for these tests:
+        storeKitConfiguration: PurchaseKitTestHarness/Tests/Products.storekit
+        # Ensure the configuration matches what your tests expect.
+        # config: Debug # (If you need to specify a build configuration for testing)
