@@ -29,9 +29,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     // available on iOS 17 simulators. Tests for subscriptions relying on this setUp will likely fail early.
     override func setUp() async throws {
         print("🧪 [SETUP] Starting PurchaseServiceIntegrationTests.setUp (using Products.storekit)")
-        let testBundle = Bundle(for: PurchaseServiceIntegrationTests.self)
-        guard let url = testBundle.url(forResource: "Products", withExtension: "storekit") else {
-            XCTFail("Could not find Products.storekit in bundle. testBundle path: \(testBundle.bundlePath)")
+        guard let url = getStoreKitURLInSPMBundle(filename: "Products.storekit") else {
+            // The XCTFail is now inside getStoreKitURLForIntegrationTest or getSPMTestResourceBundle
+            // Add a specific XCTFail here if it returns nil to make it obvious in this test's log.
+            XCTFail("Could not get URL for Products.storekit in setUp. Check diagnostic logs from helper functions.")
             return
         }
         print("🧪 [SETUP] StoreKit Configuration URL: \(url.path)")
@@ -128,19 +129,89 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         cancellables = nil
     }
 
+    private var nestedBundleName: String { // Make it a computed property for flexibility
+        // You might need to adjust this if SPM's naming convention changes
+        // or make it more dynamic if possible. For now, hardcoding is okay
+        // based on what the diagnostic test found.
+        return "ASimplePurchaseKitProject_PurchaseKitIntegrationTests.bundle"
+    }
+
+    private func getSPMTestResourceBundle(mainTestBundle: Bundle) -> Bundle? {
+        // Use the exact logic from SPMStoreKitDiagnostics.swift's getSPMTestResourceBundle
+        // that successfully found the nested bundle.
+        // For example:
+        guard let nestedBundleURL = mainTestBundle.url(forResource: (nestedBundleName as NSString).deletingPathExtension,
+                                                       withExtension: (nestedBundleName as NSString).pathExtension) else {
+            print("⚠️ [PSI] Could not find nested resource bundle '\(nestedBundleName)' directly in main test bundle: \(mainTestBundle.bundlePath).")
+            // Add robust enumeration fallback if needed, as in SPMStoreKitDiagnostics
+            if let resourcePath = mainTestBundle.resourcePath,
+               let enumerator = FileManager.default.enumerator(atPath: resourcePath) {
+                for case let path as String in enumerator {
+                    if path.hasSuffix(".bundle") && path.contains("PurchaseKitIntegrationTests") {
+                        let potentialURL = URL(fileURLWithPath: resourcePath).appendingPathComponent(path)
+                        if let bundle = Bundle(url: potentialURL) {
+                            print("✅ [PSI] Found potential nested bundle via enumeration: \(bundle.bundlePath)")
+                            return bundle
+                        }
+                    }
+                }
+            }
+            print("❌ [PSI] Failed to find nested resource bundle via enumeration as well.")
+            return nil
+        }
+        
+        guard let bundle = Bundle(url: nestedBundleURL) else {
+            print("❌ [PSI] Found URL for '\(nestedBundleName)' but could not create Bundle instance from it: \(nestedBundleURL.path)")
+            return nil
+        }
+        print("✅ [PSI] Successfully loaded nested resource bundle: \(bundle.bundlePath)")
+        return bundle
+    }
+
+    private func getStoreKitURLInSPMBundle(filename: String) -> URL? {
+        // Use the exact logic from SPMStoreKitDiagnostics.swift's getStoreKitURLInSPMBundle
+        // that successfully found the .storekit files.
+        // For example:
+        let mainTestBundle = Bundle(for: PurchaseServiceIntegrationTests.self) // Specific to this class
+        guard let spmResourceBundle = getSPMTestResourceBundle(mainTestBundle: mainTestBundle) else {
+            XCTFail("[PSI] CRITICAL: Could not get SPM resource bundle. StoreKit file '\(filename)' cannot be loaded.")
+            return nil
+        }
+
+        let name = (filename as NSString).deletingPathExtension
+        let ext = (filename as NSString).pathExtension
+
+        print("ℹ️ [PSI] Attempting to load '\(filename)' from SPM bundle: \(spmResourceBundle.bundlePath), name: '\(name)', ext: '\(ext)'")
+
+        guard let url = spmResourceBundle.url(forResource: name, withExtension: ext) else { // Loading from root of spmResourceBundle
+            XCTFail("[PSI] Failed to get URL for '\(filename)' (name: '\(name)', ext: '\(ext)') from root of SPM resource bundle: \(spmResourceBundle.bundlePath)")
+            // ... (optional content listing for debug as before)
+            return nil
+        }
+        
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            XCTFail("[PSI] URL for '\(filename)' obtained but file does not exist at: \(url.path)")
+            return nil
+        }
+        print("✅ [PSI] Confirmed URL for '\(filename)': \(url.path)")
+        return url
+    }
+
     // Helper to set up SUT with a specific .storekit file
     private func setupSUTWithStoreKitFile(
         storeKitFilename: String,
         productIDsForConfig: [String]
     ) async throws -> (sut: PurchaseService, session: SKTestSession, cancellables: Set<AnyCancellable>) {
         print("🧪 [FOCUSED SETUP] Starting for \(storeKitFilename)")
-        let testBundle = Bundle(for: PurchaseServiceIntegrationTests.self)
-        guard let url = testBundle.url(forResource: storeKitFilename, withExtension: "storekit") else {
-            let errorMsg = "Could not find \(storeKitFilename).storekit in bundle. Path: \(testBundle.bundlePath)"
-            XCTFail(errorMsg)
+
+        guard let url = getStoreKitURLInSPMBundle(filename: storeKitFilename) else {
+            // Throwing an error is appropriate here as the function signature allows it
+            let errorMsg = "Could not get URL for \(storeKitFilename). Check diagnostic logs from helper functions."
+            XCTFail(errorMsg) // Also log it
             throw NSError(domain: "TestError", code: 1, userInfo: [NSLocalizedDescriptionKey: errorMsg])
         }
         print("🧪 [FOCUSED SETUP] StoreKit Configuration URL: \(url.path)")
+
 
         let newSession = try SKTestSession(contentsOf: url)
         print("🧪 [FOCUSED SETUP] SKTestSession initialized for \(storeKitFilename).")
@@ -213,7 +284,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
     func test_fetchLifetimeProduct_withLifetimeOnlyStoreKitFile() async throws {
         let (sut, _, cancellables) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestLifetimeOnly",
+            storeKitFilename: "TestLifetimeOnly.storekit",
             productIDsForConfig: [lifetimeProductID]
         )
         var localCancellables = cancellables
@@ -228,7 +299,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     func test_fetchSubscriptionProducts_withSubscriptionOnlyStoreKitFile() async throws {
         let subscriptionProductIDs = [monthlyProductID, yearlyProductID]
         let (sut, _, cancellables) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestSubscriptionOnly",
+            storeKitFilename: "TestSubscriptionOnly.storekit",
             productIDsForConfig: subscriptionProductIDs
         )
         var localCancellables = cancellables
@@ -257,7 +328,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     func test_purchaseMonthlySubscription_withSubscriptionOnlyStoreKitFile() async throws {
         let subscriptionProductIDs = [monthlyProductID, yearlyProductID]
         let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestSubscriptionOnly",
+            storeKitFilename: "TestSubscriptionOnly.storekit",
             productIDsForConfig: subscriptionProductIDs
         )
         var localCancellables = cancellables
@@ -302,7 +373,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
     func test_nonConsumable_fullFlow_usingLifetimeOnlyFile() async throws {
         let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestLifetimeOnly",
+            storeKitFilename: "TestLifetimeOnly.storekit",
             productIDsForConfig: [lifetimeProductID]
         )
         var activeCancellables = cancellables
@@ -368,7 +439,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         // Cancellation Test for Non-Consumable
         print("🧪 Setting up for non-consumable purchase cancellation test...")
         let (sutCancel, cancelSession, cancelCancellablesSetup) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestLifetimeOnly",
+            storeKitFilename: "TestLifetimeOnly.storekit",
             productIDsForConfig: [lifetimeProductID]
         )
         var activeCancelCancellables = cancelCancellablesSetup
@@ -412,7 +483,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
     func test_complete_storekit_structure() throws {
         let testBundle = Bundle(for: PurchaseServiceIntegrationTests.self)
-        guard let url = testBundle.url(forResource: "Products", withExtension: "storekit") else {
+        guard let url = getStoreKitURLInSPMBundle(filename: "Products.storekit") else {
             XCTFail("Could not find Products.storekit")
             return
         }
@@ -432,7 +503,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     func test_purchaseMonthlySubscription_succeeds_usingSubscriptionFile() async throws {
         let subscriptionProductIDs = [monthlyProductID, yearlyProductID]
         let (sutSub, sessionSub, cancellablesSub) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestSubscriptionOnly",
+            storeKitFilename: "TestSubscriptionOnly.storekit",
             productIDsForConfig: subscriptionProductIDs
         )
         var localCancellables = cancellablesSub
@@ -513,16 +584,6 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         // XCTAssertTrue(allProducts.count <= 1, "P3 Check: Product.all from mixed Products.storekit should return 0 or 1 product.")
         if allProducts.count > 1 {
             print("⚠️ P3 behavior Product.all from mixed Products.storekit returned \(allProducts.count) products unexpectedly.")
-        }
-    }
-}
-
-// JEDI MANEUVER #10: Extension to help debug Product issues (original extension)
-// This is fine.
-extension Product {
-    static var all: [Product] {
-        get async throws {
-            return try await products(for: [])
         }
     }
 }
