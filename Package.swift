@@ -1,37 +1,59 @@
-// swift-tools-version: 6.1
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
-    name: "ASimplePurchaseKit",
+    name: "ASimplePurchaseKitProject",
+    defaultLocalization: "en",
     platforms: [
         .iOS(.v16),
-        .macOS(.v12)
+        .macOS(.v12) // Keep if any part of your lib/tests is macOS compatible
     ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "ASimplePurchaseKit",
-            targets: ["ASimplePurchaseKit"]),
+            targets: ["ASimplePurchaseKit"]
+        ),
+        // You might not need to export TestHostApp as a product
+        // unless you intend for other packages to use it as an executable.
+        // For local testing, just having it as a target is usually sufficient.
+        // .executable(
+        //     name: "TestHostApp",
+        //     targets: ["TestHostApp"]
+        // )
     ],
-    dependencies: [
-        // No external dependencies!
-    ],
+    dependencies: [],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "ASimplePurchaseKit",
-            dependencies: [] // Pure Swift and StoreKit
+            path: "Sources/ASimplePurchaseKit"
+            // No need to list system framework dependencies like StoreKit here
         ),
-        .testTarget(
-            name: "ASimplePurchaseKitTests",
+        .executableTarget( // This is your app, used as a test host
+            name: "TestHostApp",
             dependencies: ["ASimplePurchaseKit"],
+            path: "Sources/TestHostApp", // Corresponds to your tree structure
             resources: [
-                // This makes the .storekit file available to your tests
-                .copy("Products.storekit")
+                .process("Assets.xcassets") // For app icons, etc.
             ]
         ),
+        .testTarget( // Unit tests for the library (no StoreKit interaction typically)
+            name: "ASimplePurchaseKitTests",
+            dependencies: ["ASimplePurchaseKit"],
+            path: "Tests/ASimplePurchaseKitTests"
+        ),
+        .testTarget( // Integration tests, hosted by TestHostApp
+            name: "PurchaseKitIntegrationTests",
+            dependencies: [
+                "ASimplePurchaseKit",
+                "TestHostApp" // This makes TestHostApp the host
+            ],
+            path: "Tests/PurchaseKitIntegrationTests",
+            resources: [
+                .copy("Resources/Products.storekit"),
+                .copy("Resources/TestLifetimeOnly.storekit"),
+                .copy("Resources/TestMinimalSubscription.storekit"),
+                .copy("Resources/TestSubscriptionOnly.storekit")
+            ]
+        )
     ]
 )

@@ -1,0 +1,22 @@
+{
+  "identifier": "LIFETIME_ONLY_CONFIG_V1",
+  "products": [
+    {
+      "displayPrice": "99.99",
+      "familyShareable": false,
+      "internalID": "LIFETIME_PRO_ID_01",
+      "localizations": [
+        {
+          "description": "Unlock all Pro features forever with a single purchase.",
+          "displayName": "Lifetime Pro",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.asimplepurchasekit.pro.lifetime",
+      "referenceName": "Lifetime Pro Access",
+      "type": "NonConsumable"
+    }
+  ],
+  "subscriptionGroups": [],
+  "version": { "major": 1, "minor": 0 }
+}

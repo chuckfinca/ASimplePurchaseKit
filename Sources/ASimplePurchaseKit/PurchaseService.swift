@@ -13,8 +13,8 @@ import Combine
 public class PurchaseService: ObservableObject {
 
     // MARK: - Published State
-    @Published public private(set) var availableProducts: [Product] = []
-    @Published public private(set) var entitlementStatus: EntitlementStatus = .unknown
+    @Published public internal(set) var availableProducts: [Product] = []
+    @Published public internal(set) var entitlementStatus: EntitlementStatus = .unknown
     @Published public private(set) var isPurchasing: Bool = false
     @Published public private(set) var lastError: PurchaseError?
 
@@ -37,7 +37,8 @@ public class PurchaseService: ObservableObject {
             productIDs: config.productIDs,
             productProvider: liveProvider,
             purchaser: liveProvider,
-            receiptValidator: liveProvider
+            receiptValidator: liveProvider,
+            isUnitTesting: config.isUnitTesting
         )
     }
 

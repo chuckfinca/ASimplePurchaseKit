@@ -1,0 +1,22 @@
+{
+  "identifier": "MINIMAL_SUBS_V1",
+  "products": [],
+  "subscriptionGroups": [
+    {
+      "id": "MINIMAL_GROUP",
+      "name": "Minimal Subscription",
+      "subscriptions": [
+        {
+          "displayPrice": "0.99",
+          "familyShareable": false,
+          "internalID": "MINIMAL_SUB_ID_01",
+          "productID": "com.asimplepurchasekit.pro.minimal",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Minimal Monthly",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": { "major": 1, "minor": 0 }
+}
