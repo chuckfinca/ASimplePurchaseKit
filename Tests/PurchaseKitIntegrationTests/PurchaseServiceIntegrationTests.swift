@@ -145,7 +145,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             print("⚠️ [PSI] Could not find nested resource bundle '\(nestedBundleName)' directly in main test bundle: \(mainTestBundle.bundlePath).")
             // Add robust enumeration fallback if needed, as in SPMStoreKitDiagnostics
             if let resourcePath = mainTestBundle.resourcePath,
-               let enumerator = FileManager.default.enumerator(atPath: resourcePath) {
+                let enumerator = FileManager.default.enumerator(atPath: resourcePath) {
                 for case let path as String in enumerator {
                     if path.hasSuffix(".bundle") && path.contains("PurchaseKitIntegrationTests") {
                         let potentialURL = URL(fileURLWithPath: resourcePath).appendingPathComponent(path)
@@ -159,7 +159,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             print("❌ [PSI] Failed to find nested resource bundle via enumeration as well.")
             return nil
         }
-        
+
         guard let bundle = Bundle(url: nestedBundleURL) else {
             print("❌ [PSI] Found URL for '\(nestedBundleName)' but could not create Bundle instance from it: \(nestedBundleURL.path)")
             return nil
@@ -188,7 +188,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             // ... (optional content listing for debug as before)
             return nil
         }
-        
+
         guard FileManager.default.fileExists(atPath: url.path) else {
             XCTFail("[PSI] URL for '\(filename)' obtained but file does not exist at: \(url.path)")
             return nil
@@ -456,26 +456,15 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         if sutCancel.lastFailure?.error == .purchaseCancelled {
             XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active after correctly cancelled purchase.")
             print("✅ Cancellation simulated as .paymentCancelled correctly.")
-        } else if sutCancel.lastFailure?.error == .unknown {
-            // Check for P6
-            // The `allTransactions()` method returns SKTestTransaction, not StoreKit.Transaction.
-            // SKTestTransaction doesn't directly expose the raw error that caused product.purchase() to fail.
-            // The fact that sutCancel.lastError is .unknown when we set .paymentCancelled is the primary indicator of P6.
-            let history = cancelSession.allTransactions()
-            let hasXcodeErrorTransaction = history.contains { transaction in
-                // This is a heuristic. The actual error might not be in the transaction directly.
-                // The log showed "Received error that does not have a corresponding StoreKit Error: Error Domain=AMSErrorDomain Code=305"
-                // This detail isn't directly on the SKTestTransaction object. We rely on the .unknown error.
-                return transaction.productIdentifier == lifetimeProductID // And potentially other markers if available
-            }
-            if hasXcodeErrorTransaction { // This check might not be robust. The sutCancel.lastError == .unknown is the key.
-                print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.unknown` error instead of `.purchaseCancelled`. This is an Apple StoreKit testing bug (P6).")
-                XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug where .paymentCancelled results in a generic error.")
-            } else {
-                XCTFail("Expected .purchaseCancelled or P6-related .unknown error, but got \(String(describing: sutCancel.lastFailure?.error)).")
-            }
+        } else if case .underlyingError(let underlyingError) = sutCancel.lastFailure?.error,
+            let skError = underlyingError as? StoreKitError, // Make sure it's specifically StoreKitError
+            case .unknown = skError { // And specifically .unknown
+            print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.underlyingError(StoreKitError.unknown)`. This is an Apple StoreKit testing bug (P6).")
+            XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active after P6-affected cancelled purchase.")
+            // Using XCTSkip here is appropriate as the SUT correctly reports an error, but not the one StoreKit *should* have given.
+            XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug where .paymentCancelled results in a generic StoreKitError.unknown.")
         } else {
-            XCTFail("Expected .purchaseCancelled or P6-related .unknown error for cancellation, but got \(String(describing: sutCancel.lastFailure?.error)).")
+            XCTFail("Expected .purchaseCancelled or P6-related .underlyingError(StoreKitError.unknown), but got \(String(describing: sutCancel.lastFailure?.error)).")
         }
 
         cancelSession.failTransactionsEnabled = false
@@ -551,12 +540,15 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         if self.sut.lastFailure?.error == .purchaseCancelled {
             XCTAssertFalse(self.sut.entitlementStatus.isActive, "Entitlement should not be active after correctly cancelled purchase.")
             print("✅ Non-consumable cancellation simulated as .paymentCancelled correctly using Products.storekit.")
-        } else if self.sut.lastFailure?.error == .unknown {
-            // Check for P6
-            print("⚠️ P6 DETECTED (Products.storekit): `SKTestSession.failureError = .paymentCancelled` resulted in `.unknown` error instead of `.purchaseCancelled`. This is an Apple StoreKit testing bug (P6).")
-            XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug where .paymentCancelled results in a generic error.")
+        } else if case .underlyingError(let underlyingError) = self.sut.lastFailure?.error,
+            let skError = underlyingError as? StoreKitError, // Make sure it's specifically StoreKitError
+            case .unknown = skError { // And specifically .unknown
+            print("⚠️ P6 DETECTED (Products.storekit): `SKTestSession.failureError = .paymentCancelled` resulted in `.underlyingError(StoreKitError.unknown)`. This is an Apple StoreKit testing bug (P6).")
+            XCTAssertFalse(self.sut.entitlementStatus.isActive, "Entitlement should not be active after P6-affected cancelled purchase.")
+            // Using XCTSkip here is appropriate
+            XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug where .paymentCancelled results in a generic StoreKitError.unknown.")
         } else {
-            XCTFail("Expected .purchaseCancelled or P6-related .unknown error for non-consumable cancellation, but got \(String(describing: self.sut.lastFailure?.error)).")
+            XCTFail("Expected .purchaseCancelled or P6-related .underlyingError(StoreKitError.unknown) for non-consumable cancellation, but got \(String(describing: self.sut.lastFailure?.error)).")
         }
 
         self.session.failTransactionsEnabled = false // Reset for other tests

@@ -328,10 +328,10 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertEqual(mockProvider.checkCurrentEntitlementsCallCount, 1)
         XCTAssertNotNil(sut.lastFailure)
         XCTAssertEqual(sut.lastFailure?.error, .missingEntitlement)
-        XCTAssertEqual(sut.lastFailure?.operation, "updateEntitlementStatus")
+        XCTAssertEqual(sut.lastFailure?.operation, "updateEntitlementStatus_explicit")
         XCTAssertEqual(sut.entitlementStatus, initialStatus) // Status should not change on error
         XCTAssertEqual(sut.purchaseState, .idle)
-        XCTAssertTrue(mockDelegate.logEvents.contains(where: { $0.level == .error && $0.message.contains("Operation 'updateEntitlementStatus' failed") }))
+        XCTAssertTrue(mockDelegate.logEvents.contains(where: { $0.level == .error && $0.message.contains("Operation 'updateEntitlementStatus_explicit' failed") }))
     }
 
     // MARK: - Restore Purchases Tests

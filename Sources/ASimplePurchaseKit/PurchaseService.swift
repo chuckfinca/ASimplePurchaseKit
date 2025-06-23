@@ -81,11 +81,18 @@ public class PurchaseService: ObservableObject {
         if !isUnitTesting_prop {
             self.transactionListener = Task.detached { [weak self] in
                 guard let self = self else { return }
-                await self.logOnMainActor(.debug, "Transaction.updates listener started.")
-                for await result in Transaction.updates {
-                    await self.handle(transactionResult: result)
+                await self.logOnMainActor(.debug, "Transaction.updates listener starting.") // Changed message slightly for clarity
+                do {
+                    for await result in Transaction.updates {
+                        await self.handle(transactionResult: result)
+                    }
+                    await self.logOnMainActor(.debug, "Transaction.updates listener ended normally.")
+                } catch {
+                    // This task is detached, errors here won't be caught by default by XCTest
+                    // and won't directly fail a test unless they cause other observable issues.
+                    // Log the error to understand if the listener itself is crashing.
+                    await self.logOnMainActor(.error, "Transaction.updates listener terminated with error.", error: error, operation: "transactionListener")
                 }
-                await self.logOnMainActor(.debug, "Transaction.updates listener ended.")
             }
         }
 
@@ -115,12 +122,12 @@ public class PurchaseService: ObservableObject {
         if let productID = productID { context["productID"] = productID }
         if let error = error { context["error"] = String(describing: type(of: error)) + ": " + error.localizedDescription }
         if let operation = operation { context["operation"] = operation }
-        
+
         // Delegate calls should be on the main thread if the delegate expects it
         // Since PurchaseService is @MainActor, this call is already on the main thread.
         delegate?.purchaseService(didLog: message, level: level, context: context.isEmpty ? nil : context)
     }
-    
+
     @MainActor
     private func logOnMainActor(_ level: LogLevel, _ message: String, productID: String? = nil, error: Error? = nil, operation: String? = nil) {
         self.log(level, message, productID: productID, error: error, operation: operation)
@@ -150,8 +157,8 @@ public class PurchaseService: ObservableObject {
             self.availableProducts = try await productProvider.fetchProducts(for: productIDs)
             log(.info, "Successfully fetched \(availableProducts.count) products.")
             if availableProducts.isEmpty && !productIDs.isEmpty {
-                 log(.warning, "Fetched 0 products, but product IDs were provided. Check configuration or StoreKit availability.")
-                 setFailure(.productsNotFound, operation: "fetchProducts")
+                log(.warning, "Fetched 0 products, but product IDs were provided. Check configuration or StoreKit availability.")
+                setFailure(.productsNotFound, operation: "fetchProducts")
             }
         } catch let e as PurchaseError {
             self.availableProducts = []
@@ -175,7 +182,7 @@ public class PurchaseService: ObservableObject {
             setFailure(.productNotAvailableForPurchase(productID: productID), productID: productID, operation: "purchase")
             return
         }
-        
+
         guard let underlyingStoreKitProduct = productToPurchase.underlyingStoreKitProduct else {
             log(.error, "Product \(productID) is a mock or adapter without an underlying StoreKit.Product. Cannot purchase.", productID: productID, operation: "purchase")
             setFailure(.unknown, productID: productID, operation: "purchase")
@@ -211,7 +218,7 @@ public class PurchaseService: ObservableObject {
         }
         setPurchaseState(.idle, operation: "purchase", productID: productID)
     }
-    
+
     public func getAllTransactions() async -> [Transaction] {
         log(.info, "Attempting to get all transactions.", operation: "getAllTransactions")
         self.lastFailure = nil // Explicit getAllTransactions clears previous errors for this op
@@ -253,11 +260,11 @@ public class PurchaseService: ObservableObject {
 
         await _updateEntitlementStatusInternal(operation: "restorePurchases_updateEntitlement")
         setPurchaseState(.idle, operation: "restorePurchases")
-        
+
         if lastFailure == nil {
-             log(.info, "Restore purchases process completed successfully. Final entitlement: \(entitlementStatus).", operation: "restorePurchases")
+            log(.info, "Restore purchases process completed successfully. Final entitlement: \(entitlementStatus).", operation: "restorePurchases")
         } else {
-             log(.warning, "Restore purchases process completed, but a failure occurred: \(lastFailure!.error.localizedDescription) during operation: \(lastFailure!.operation). Final entitlement: \(entitlementStatus).", operation: "restorePurchases")
+            log(.warning, "Restore purchases process completed, but a failure occurred: \(lastFailure!.error.localizedDescription) during operation: \(lastFailure!.operation). Final entitlement: \(entitlementStatus).", operation: "restorePurchases")
         }
     }
 
@@ -276,13 +283,13 @@ public class PurchaseService: ObservableObject {
             log(.debug, "Already checking entitlement (explicitly).", operation: operation)
             return
         }
-        
+
         let previousState = self.purchaseState
         // Set .checkingEntitlement state only for the explicit public call scenario
         if operation == "updateEntitlementStatus_explicit" {
             setPurchaseState(.checkingEntitlement, operation: operation)
         }
-        
+
         log(.info, "Internal: Updating entitlement status (Triggering Operation: \(operation)).")
 
         do {
@@ -298,7 +305,7 @@ public class PurchaseService: ObservableObject {
         } catch {
             setFailure(.underlyingError(error), operation: operation) // Sets lastFailure specific to this check
         }
-        
+
         // Only reset state to idle if this was the explicit public call that set .checkingEntitlement
         if operation == "updateEntitlementStatus_explicit" {
             // If previous state was already .checkingEntitlement (due to re-entrancy check above), reset to idle.
@@ -320,7 +327,7 @@ public class PurchaseService: ObservableObject {
         log(.info, "Handling incoming transaction update.", operation: operation)
         // It's a background update, so we shouldn't clear lastFailure from other user-initiated operations.
         // If this specific handling fails, it will set its own lastFailure.
-        
+
         do {
             let transaction: Transaction
             switch transactionResult {
@@ -335,23 +342,23 @@ public class PurchaseService: ObservableObject {
                 transaction = trans
                 log(.info, "Received verified transactionID: \(transaction.id), productID: \(transaction.productID).", productID: transaction.productID, operation: operation)
             }
-            
+
             let oldStatus = self.entitlementStatus
             let newValidatedStatus = try await receiptValidator.validate(transaction: transaction)
-            
+
             // Only update if the new status from this single transaction validation is different
             // or if the current status is unknown/notSubscribed, giving priority to active one.
             // More sophisticated logic might be needed if multiple active transactions could yield different statuses.
             // For now, assume this validated transaction gives a more current view if it's active.
             if newValidatedStatus.isActive || entitlementStatus == .unknown || entitlementStatus == .notSubscribed {
                 if self.entitlementStatus != newValidatedStatus {
-                     log(.info, "Entitlement updated to \(newValidatedStatus) due to transaction \(transaction.id).", productID: transaction.productID, operation: operation)
+                    log(.info, "Entitlement updated to \(newValidatedStatus) due to transaction \(transaction.id).", productID: transaction.productID, operation: operation)
                     self.entitlementStatus = newValidatedStatus
                 } else {
-                     log(.info, "Entitlement status \(self.entitlementStatus) reaffirmed by transaction \(transaction.id).", productID: transaction.productID, operation: operation)
+                    log(.info, "Entitlement status \(self.entitlementStatus) reaffirmed by transaction \(transaction.id).", productID: transaction.productID, operation: operation)
                 }
             } else {
-                 log(.info, "Current entitlement status \(self.entitlementStatus) is active and preferred over non-active status from transaction \(transaction.id) (\(newValidatedStatus)).", productID: transaction.productID, operation: operation)
+                log(.info, "Current entitlement status \(self.entitlementStatus) is active and preferred over non-active status from transaction \(transaction.id) (\(newValidatedStatus)).", productID: transaction.productID, operation: operation)
             }
 
 
