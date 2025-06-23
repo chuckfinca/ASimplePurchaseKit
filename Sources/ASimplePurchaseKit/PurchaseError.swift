@@ -1,9 +1,5 @@
-//
-//  PurchaseError.swift
-//  ASimplePurchaseKit
-//
-//  Created by Charles Feinn on 6/10/25.
-//
+// File: Sources/ASimplePurchaseKit/PurchaseError.swift
+// (Assuming this is the path based on your tree structure)
 
 import Foundation
 import StoreKit
@@ -35,9 +31,9 @@ public enum PurchaseError: Error, LocalizedError, Equatable {
         case .verificationFailed:
             return "The purchase could not be verified."
         case .userNotEntitled:
-            return "You do not have an active entitlement." // Changed from subscription to entitlement
+            return "You do not have an active entitlement."
         case .missingEntitlement:
-            return "Could not determine entitlement status." // Changed from subscription to entitlement
+            return "Could not determine entitlement status."
         case .productNotAvailableForPurchase(let productID):
             return "Product with ID '\(productID)' is not available for purchase at this time."
         case .underlyingError(let error):
@@ -59,18 +55,28 @@ public enum PurchaseError: Error, LocalizedError, Equatable {
         case (.missingEntitlement, .missingEntitlement): return true
         case (.productNotAvailableForPurchase(let lID), .productNotAvailableForPurchase(let rID)): return lID == rID
         case (.underlyingError(let lError), .underlyingError(let rError)):
-            return lError.localizedDescription == rError.localizedDescription // Basic comparison
+            // If both are NSErrors, compare domain, code.
+            // Localized description can be too variable or localized for reliable test comparison.
+            if let lnsError = lError as? NSError, let rnsError = rError as? NSError {
+                return lnsError.domain == rnsError.domain &&
+                       lnsError.code == rnsError.code
+                // If you also need to compare userInfo for NSError, that would be more complex.
+                // For test purposes, domain and code are often sufficient for identity.
+            }
+            // Fallback for other error types: compare their string descriptions.
+            // Using String(describing:) can be more stable than localizedDescription for some error types.
+            return String(describing: lError) == String(describing: rError)
         default: return false
         }
     }
 }
 
-// NEW: PurchaseFailure struct for richer error reporting
+// PurchaseFailure struct remains the same
 public struct PurchaseFailure: Equatable, Sendable {
     public let error: PurchaseError
-    public let productID: String? // Optional, as some errors are not product-specific
+    public let productID: String?
     public let timestamp: Date
-    public let operation: String // e.g., "purchase", "restore", "fetchProducts", "checkEntitlement"
+    public let operation: String
 
     public init(error: PurchaseError, productID: String? = nil, operation: String, timestamp: Date = Date()) {
         self.error = error
@@ -83,6 +89,8 @@ public struct PurchaseFailure: Equatable, Sendable {
         return lhs.error == rhs.error &&
                lhs.productID == rhs.productID &&
                lhs.operation == rhs.operation &&
-               lhs.timestamp == rhs.timestamp // Or compare with tolerance for dates
+               // For Date, ensure a tolerance if exact match is problematic in tests
+               // For now, direct equality is fine if timestamps are set carefully.
+               lhs.timestamp == rhs.timestamp
     }
 }

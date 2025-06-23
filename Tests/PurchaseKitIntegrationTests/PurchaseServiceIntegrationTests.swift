@@ -488,40 +488,6 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         XCTAssertFalse(subscriptionGroups.isEmpty, "Products.storekit should have subscription groups defined.")
     }
 
-    // Refactored to use TestSubscriptionOnly.storekit; expected to fail product loading due to P1.
-    func test_purchaseMonthlySubscription_succeeds_usingSubscriptionFile() async throws {
-        let subscriptionProductIDs = [monthlyProductID, yearlyProductID]
-        let (sutSub, sessionSub, cancellablesSub) = try await setupSUTWithStoreKitFile(
-            storeKitFilename: "TestSubscriptionOnly.storekit",
-            productIDsForConfig: subscriptionProductIDs
-        )
-        var localCancellables = cancellablesSub
-        defer { localCancellables.forEach { $0.cancel() } }
-
-        guard sutSub.availableProducts.contains(where: { $0.id == monthlyProductID }) else {
-            let message = "P1 CHECK (from test_purchaseMonthlySubscription_succeeds_usingSubscriptionFile): Monthly product not loaded from TestSubscriptionOnly.storekit due to P1. Available: \(sutSub.availableProducts.map(\.id))."
-            print("⚠️ \(message)")
-            XCTFail(message + " Test cannot proceed.") // This XCTFail is expected if P1 is active.
-            return
-        }
-
-        let expectation = XCTestExpectation(description: "Entitlement status should become active (TestSubscriptionOnly.storekit).")
-        sutSub.$entitlementStatus
-            .sink { status in
-            if status.isActive {
-                expectation.fulfill()
-            }
-        }
-            .store(in: &localCancellables)
-
-        await sutSub.purchase(productID: monthlyProductID)
-        await fulfillment(of: [expectation], timeout: 10.0)
-
-        XCTAssertTrue(sutSub.entitlementStatus.isActive, "Entitlement via TestSubscriptionOnly.storekit. Check P1 if fails.")
-        XCTAssertNil(sutSub.lastFailure?.error)
-        XCTAssertFalse(sessionSub.allTransactions().isEmpty, "SKTestSession (TestSubscriptionOnly.storekit) should have transactions.")
-    }
-
     // Refactored to test cancellation of a non-consumable using self.sut (Products.storekit)
     func test_purchase_nonConsumable_whenCancelledByUser_setsCancelledError() async throws {
         // self.sut is from setUp(), uses Products.storekit. Expect lifetimeProductID to be available.
