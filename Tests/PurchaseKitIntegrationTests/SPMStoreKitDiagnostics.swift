@@ -26,7 +26,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         print("Finished Test: \(self.name)")
         print("==================================================================\n")
     }
-    
+
     /// Attempts to find the nested resource bundle created by SPM for test targets.
     private func getSPMTestResourceBundle_PSI(mainTestBundle: Bundle) -> Bundle? { // Renamed to avoid conflict if SPMStoreKitDiagnostics is run together
         let baseBundleName = "ASimplePurchaseKitProject_PurchaseKitIntegrationTests" // Base name without .bundle
@@ -43,10 +43,10 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         } else {
             print("⚠️ [PSI] Could not find nested resource bundle '\(nestedBundleNameWithExtension)' directly in main test bundle: \(mainTestBundle.bundlePath). Attempting enumeration...")
         }
-        
+
         // Fallback to enumeration (more robust)
         if let resourcePath = mainTestBundle.resourcePath,
-           let enumerator = FileManager.default.enumerator(atPath: resourcePath) {
+            let enumerator = FileManager.default.enumerator(atPath: resourcePath) {
             for case let path as String in enumerator {
                 if path.hasSuffix(".bundle") && path.contains(baseBundleName) { // Check if the path contains the base name
                     let potentialURL = URL(fileURLWithPath: resourcePath).appendingPathComponent(path)
@@ -87,7 +87,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
             }
             return nil
         }
-        
+
         guard FileManager.default.fileExists(atPath: url.path) else {
             XCTFail("[PSI] URL for '\(filename)' obtained but file does not exist at: \(url.path)")
             return nil
@@ -114,19 +114,19 @@ final class SPMStoreKitDiagnostics: XCTestCase {
             print("⚠️ Main Test Bundle Identifier: nil")
         }
         print("---")
-        
+
         // --- Check for Main Bundle (Host App) ---
         let hostAppBundle = Bundle.main
         print("ℹ️ Host App Bundle Path: \(hostAppBundle.bundlePath)")
         if let hostBundleIdentifier = hostAppBundle.bundleIdentifier {
-             print("ℹ️ Host App Bundle Identifier: \(hostBundleIdentifier)")
-             if let testBundleIdentifier = mainTestBundle.bundleIdentifier {
+            print("ℹ️ Host App Bundle Identifier: \(hostBundleIdentifier)")
+            if let testBundleIdentifier = mainTestBundle.bundleIdentifier {
                 if testBundleIdentifier.hasPrefix(hostBundleIdentifier + ".") {
                     print("✅ Test bundle ID seems to be a child of Host App bundle ID.")
                 } else if hostBundleIdentifier == "com.apple.dt.xctest.tool" {
                     print("⚠️ Host App Bundle is xctest.tool. This is common for SPM tests. Info.plist's TestedHostBundleIdentifier: \(hostAppBundle.infoDictionary?["TestedHostBundleIdentifier"] ?? "Not specified")")
                 }
-                 else {
+                else {
                     print("❌ PROBLEM: Test bundle ID ('\(testBundleIdentifier)') is NOT a child of host app bundle ('\(hostBundleIdentifier)').")
                 }
             }
@@ -143,12 +143,12 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         }
         print("✅ Using SPM Resource Bundle: \(spmResourceBundle.bundlePath)")
         if let spmResourceBundlePath = spmResourceBundle.resourcePath {
-             print("ℹ️ SPM Resource Bundle's Resource Path: \(spmResourceBundlePath)")
+            print("ℹ️ SPM Resource Bundle's Resource Path: \(spmResourceBundlePath)")
         } else {
             print("⚠️ SPM Resource Bundle's Resource Path: nil")
         }
         print("---")
-        
+
         var foundStoreKitFileViaSPMBundle = false
         let storeKitFilesToFind = ["Products.storekit", "TestLifetimeOnly.storekit", "TestSubscriptionOnly.storekit", "TestMinimalSubscription.storekit"]
 
@@ -165,7 +165,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
 
             // Attempt 1: In a "Resources" subdirectory INSIDE spmResourceBundle
             if let url = spmResourceBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources") {
-                 if FileManager.default.fileExists(atPath: url.path) {
+                if FileManager.default.fileExists(atPath: url.path) {
                     print("✅ FOUND (SPM Bundle Pattern 1): '\(fileName)' in '\(spmResourceBundle.bundleURL.lastPathComponent)/Resources/': \(url.path)")
                     foundStoreKitFileViaSPMBundle = true
                 } else {
@@ -177,24 +177,24 @@ final class SPMStoreKitDiagnostics: XCTestCase {
 
             // Attempt 2: At the ROOT of spmResourceBundle
             if let url = spmResourceBundle.url(forResource: name, withExtension: ext) {
-                 if FileManager.default.fileExists(atPath: url.path) {
+                if FileManager.default.fileExists(atPath: url.path) {
                     print("✅ FOUND (SPM Bundle Pattern 2): '\(fileName)' at root of '\(spmResourceBundle.bundleURL.lastPathComponent)': \(url.path)")
                     foundStoreKitFileViaSPMBundle = true
                 } else {
-                     print("⚠️ NOMINALLY FOUND (SPM Bundle Pattern 2), BUT DOES NOT EXIST: '\(fileName)' at root of '\(spmResourceBundle.bundleURL.lastPathComponent)' at: \(url.path)")
+                    print("⚠️ NOMINALLY FOUND (SPM Bundle Pattern 2), BUT DOES NOT EXIST: '\(fileName)' at root of '\(spmResourceBundle.bundleURL.lastPathComponent)' at: \(url.path)")
                 }
             } else {
-                 print("❌ NOT FOUND (SPM Bundle Pattern 2): '\(fileName)' at root of '\(spmResourceBundle.bundleURL.lastPathComponent)'.")
+                print("❌ NOT FOUND (SPM Bundle Pattern 2): '\(fileName)' at root of '\(spmResourceBundle.bundleURL.lastPathComponent)'.")
             }
-             print("---")
+            print("---")
         }
-        
+
         XCTAssertTrue(foundStoreKitFileViaSPMBundle, "At least one .storekit file should be locatable within the determined SPM resource bundle.")
 
         print("\n📄 Enumerating SPM Resource Bundle's resourcePath contents directly for '.storekit' files:")
         var enumeratedStoreKitFilesCountInSPMBundle = 0
         if let spmBundleResourcePath = spmResourceBundle.resourcePath,
-           let enumerator = FileManager.default.enumerator(atPath: spmBundleResourcePath) {
+            let enumerator = FileManager.default.enumerator(atPath: spmBundleResourcePath) {
             for case let path as String in enumerator {
                 if path.hasSuffix(".storekit") {
                     print("  📄 Found via SPM bundle enumeration: \(spmBundleResourcePath)/\(path)")
@@ -206,24 +206,24 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         } else {
             print("  ⚠️ Could not enumerate spmResourceBundle.resourcePath ('\(spmResourceBundle.resourcePath ?? "nil")').")
             if spmResourceBundle.resourcePath == nil {
-                 print("     This often means the bundle is 'flat' and its main bundlePath IS its resourcePath.")
-                 // Try enumerating bundlePath if resourcePath is nil
-                 if let enumerator = FileManager.default.enumerator(atPath: spmResourceBundle.bundlePath) {
-                     print("  📄 Retrying enumeration on spmResourceBundle.bundlePath ('\(spmResourceBundle.bundlePath)')...")
-                     enumeratedStoreKitFilesCountInSPMBundle = 0
-                     for case let path as String in enumerator {
-                         if path.hasSuffix(".storekit") {
-                             print("    📄 Found via SPM bundlePath enumeration: \(spmResourceBundle.bundlePath)/\(path)")
-                             enumeratedStoreKitFilesCountInSPMBundle += 1
-                         }
-                     }
-                     print("    ℹ️ Total .storekit files found by SPM bundlePath enumeration: \(enumeratedStoreKitFilesCountInSPMBundle)")
-                     XCTAssertGreaterThan(enumeratedStoreKitFilesCountInSPMBundle, 0, "Enumerator on bundlePath should find .storekit files if resourcePath was nil.")
-                 } else {
-                     XCTFail("Could not enumerate spmResourceBundle.resourcePath OR spmResourceBundle.bundlePath.")
-                 }
+                print("     This often means the bundle is 'flat' and its main bundlePath IS its resourcePath.")
+                // Try enumerating bundlePath if resourcePath is nil
+                if let enumerator = FileManager.default.enumerator(atPath: spmResourceBundle.bundlePath) {
+                    print("  📄 Retrying enumeration on spmResourceBundle.bundlePath ('\(spmResourceBundle.bundlePath)')...")
+                    enumeratedStoreKitFilesCountInSPMBundle = 0
+                    for case let path as String in enumerator {
+                        if path.hasSuffix(".storekit") {
+                            print("    📄 Found via SPM bundlePath enumeration: \(spmResourceBundle.bundlePath)/\(path)")
+                            enumeratedStoreKitFilesCountInSPMBundle += 1
+                        }
+                    }
+                    print("    ℹ️ Total .storekit files found by SPM bundlePath enumeration: \(enumeratedStoreKitFilesCountInSPMBundle)")
+                    XCTAssertGreaterThan(enumeratedStoreKitFilesCountInSPMBundle, 0, "Enumerator on bundlePath should find .storekit files if resourcePath was nil.")
+                } else {
+                    XCTFail("Could not enumerate spmResourceBundle.resourcePath OR spmResourceBundle.bundlePath.")
+                }
             } else {
-                 XCTFail("Could not enumerate spmResourceBundle.resourcePath.")
+                XCTFail("Could not enumerate spmResourceBundle.resourcePath.")
             }
         }
         print("--------------------------------------------------")
@@ -245,7 +245,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         // The ".copy("Resources/Products.storekit")" in Package.swift means:
         // "Take Products.storekit from the 'Resources' FOLDER in my source tree
         // and copy IT to the root of the target's resource bundle."
-        
+
         // Pattern 1: At the ROOT of spmResourceBundle (MOST LIKELY based on your logs)
         if let url = spmResourceBundle.url(forResource: name, withExtension: ext) {
             if FileManager.default.fileExists(atPath: url.path) {
@@ -253,11 +253,11 @@ final class SPMStoreKitDiagnostics: XCTestCase {
                 return url
             }
         }
-        
+
         // Pattern 2: In a "Resources" subdirectory INSIDE spmResourceBundle (Less likely but worth checking)
         if let url = spmResourceBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources") {
             if FileManager.default.fileExists(atPath: url.path) {
-                 print("✅ Confirmed URL (SPM Bundle/Resources) for '\(filename)': \(url.path)")
+                print("✅ Confirmed URL (SPM Bundle/Resources) for '\(filename)': \(url.path)")
                 return url
             }
         }
@@ -305,9 +305,9 @@ final class SPMStoreKitDiagnostics: XCTestCase {
             if products.isEmpty && !allProductIDsInFile.isEmpty {
                 print("⚠️ WARNING (P1/P3): No products fetched. This might be the StoreKit simulator bug if on affected iOS 17/18 versions or due to mixed-type .storekit (P3).")
             } else if products.count == 1 && products.first?.id == lifetimeProductID {
-                 print("✅ Fetched only lifetime product - typical P3 behavior for mixed 'Products.storekit' file on some simulators.")
+                print("✅ Fetched only lifetime product - typical P3 behavior for mixed 'Products.storekit' file on some simulators.")
             } else if products.count < allProductIDsInFile.count && products.count > 0 {
-                 print("⚠️ Fetched some but not all products. Count: \(products.count). Potential P1/P3 issue.")
+                print("⚠️ Fetched some but not all products. Count: \(products.count). Potential P1/P3 issue.")
             } else if products.count == allProductIDsInFile.count {
                 print("✅ Successfully fetched all expected products from 'Products.storekit'.")
             }
@@ -344,7 +344,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
                 print("  - ID: \(product.id), DisplayName: \(product.displayName), Price: \(product.displayPrice)")
             }
             if products.isEmpty {
-                 print("ℹ️ 0 products found with specific IDs (scheme-based). This is expected if no default .storekit file is set in the test plan/scheme for the 'PurchaseKitIntegrationTests' target.")
+                print("ℹ️ 0 products found with specific IDs (scheme-based). This is expected if no default .storekit file is set in the test plan/scheme for the 'PurchaseKitIntegrationTests' target.")
             }
         } catch {
             print("❌ ERROR fetching products with specific IDs (scheme-based): \(error)")
@@ -358,8 +358,8 @@ final class SPMStoreKitDiagnostics: XCTestCase {
             for product in allProducts {
                 print("  - ID: \(product.id), DisplayName: \(product.displayName), Price: \(product.displayPrice)")
             }
-             if allProducts.isEmpty {
-                 print("ℹ️ 0 products found with Product.all (scheme-based). Expected if no default .storekit file is set.")
+            if allProducts.isEmpty {
+                print("ℹ️ 0 products found with Product.all (scheme-based). Expected if no default .storekit file is set.")
             }
         } catch {
             print("❌ ERROR fetching with Product.all (scheme-based): \(error)")
@@ -368,7 +368,9 @@ final class SPMStoreKitDiagnostics: XCTestCase {
     }
 
     // MARK: - Test 4: Basic Environment Variables
-    // (No change needed)
+    // This "test" primarily logs environment variables for debugging purposes.
+    // It does not contain assertions and won't fail unless the process itself crashes.
+    // Its value is in providing context when diagnosing environmental issues with StoreKit.
     func test_A4_RelevantEnvironmentVariables() {
         print("🔬 TEST: Relevant Environment Variables")
         print("--------------------------------------------------")
@@ -378,8 +380,8 @@ final class SPMStoreKitDiagnostics: XCTestCase {
             "XCODE_PRODUCT_BUILD_VERSION",
             "SDK_NAME",
             "PLATFORM_NAME",
-            "STOREKIT_CONFIG", 
-            "TEST_HOST" 
+            "STOREKIT_CONFIG",
+            "TEST_HOST"
         ]
 
         for key in relevantKeys {
@@ -438,7 +440,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
                 print("    - Group '\(groupName)' with \(subs.count) subscriptions:")
                 for (sIdx, sub) in subs.enumerated() {
                     let subID = sub["productID"] as? String ?? "unknown_sub_id_\(sIdx)"
-                     print("      • \(subID)")
+                    print("      • \(subID)")
                 }
             }
             XCTAssertEqual(totalSubsInJSON, 2, "Products.storekit JSON should define 2 subscriptions.")
