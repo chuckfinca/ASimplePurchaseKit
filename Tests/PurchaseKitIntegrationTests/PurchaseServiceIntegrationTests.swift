@@ -292,7 +292,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         XCTAssertEqual(sut.availableProducts.count, 1, "Should load 1 lifetime product from TestLifetimeOnly.storekit.")
         XCTAssertEqual(sut.availableProducts.first?.id, lifetimeProductID)
-        XCTAssertNil(sut.lastError)
+        XCTAssertNil(sut.lastFailure?.error)
     }
 
     // This test acts as a canary for P1 (iOS 17 Sim bug with auto-renewables)
@@ -318,9 +318,9 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         }
         // If products didn't load, lastError might be .productsNotFound
         if sut.availableProducts.isEmpty && !subscriptionProductIDs.isEmpty {
-            XCTAssertEqual(sut.lastError, .productsNotFound, "If P1 causes no products to load, lastError should be .productsNotFound")
+            XCTAssertEqual(sut.lastFailure?.error, .productsNotFound, "If P1 causes no products to load, lastError should be .productsNotFound")
         } else {
-            XCTAssertNil(sut.lastError)
+            XCTAssertNil(sut.lastFailure?.error)
         }
     }
 
@@ -362,7 +362,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } else {
             XCTFail("Entitlement status is not .subscribed for subscription: \(sut.entitlementStatus)")
         }
-        XCTAssertNil(sut.lastError, "Purchase should not result in an error: \(sut.lastError?.localizedDescription ?? "nil")")
+        XCTAssertNil(sut.lastFailure?.error, "Purchase should not result in an error: \(sut.lastFailure?.error.localizedDescription ?? "nil")")
 
         var hasTransactions = false
         if !session.allTransactions().isEmpty {
@@ -385,7 +385,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             return
         }
         XCTAssertEqual(productToPurchase.id, lifetimeProductID)
-        XCTAssertNil(sut.lastError)
+        XCTAssertNil(sut.lastFailure?.error)
 
         await sut.updateEntitlementStatus()
         XCTAssertFalse(sut.entitlementStatus.isActive, "Entitlement should not be active before purchase.")
@@ -410,7 +410,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } else {
             XCTFail("Entitlement status is not correct for non-consumable: \(sut.entitlementStatus)")
         }
-        XCTAssertNil(sut.lastError, "Purchase should be successful. Error: \(sut.lastError?.localizedDescription ?? "nil")")
+        XCTAssertNil(sut.lastFailure?.error, "Purchase should be successful. Error: \(sut.lastFailure?.error.localizedDescription ?? "nil")")
         XCTAssertFalse(session.allTransactions().isEmpty, "SKTestSession should have transaction after non-consumable purchase.")
 
         sut.entitlementStatus = .notSubscribed
@@ -434,7 +434,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } else {
             XCTFail("Restored entitlement status is not correct for non-consumable: \(sut.entitlementStatus)")
         }
-        XCTAssertNil(sut.lastError, "Restore purchases should be successful.")
+        XCTAssertNil(sut.lastFailure?.error, "Restore purchases should be successful.")
 
         // Cancellation Test for Non-Consumable
         print("🧪 Setting up for non-consumable purchase cancellation test...")
@@ -453,10 +453,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         await sutCancel.purchase(productID: lifetimeProductID)
 
-        if sutCancel.lastError == .purchaseCancelled {
+        if sutCancel.lastFailure?.error == .purchaseCancelled {
             XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active after correctly cancelled purchase.")
             print("✅ Cancellation simulated as .paymentCancelled correctly.")
-        } else if sutCancel.lastError == .unknown {
+        } else if sutCancel.lastFailure?.error == .unknown {
             // Check for P6
             // The `allTransactions()` method returns SKTestTransaction, not StoreKit.Transaction.
             // SKTestTransaction doesn't directly expose the raw error that caused product.purchase() to fail.
@@ -472,10 +472,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
                 print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.unknown` error instead of `.purchaseCancelled`. This is an Apple StoreKit testing bug (P6).")
                 XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug where .paymentCancelled results in a generic error.")
             } else {
-                XCTFail("Expected .purchaseCancelled or P6-related .unknown error, but got \(String(describing: sutCancel.lastError)).")
+                XCTFail("Expected .purchaseCancelled or P6-related .unknown error, but got \(String(describing: sutCancel.lastFailure?.error)).")
             }
         } else {
-            XCTFail("Expected .purchaseCancelled or P6-related .unknown error for cancellation, but got \(String(describing: sutCancel.lastError)).")
+            XCTFail("Expected .purchaseCancelled or P6-related .unknown error for cancellation, but got \(String(describing: sutCancel.lastFailure?.error)).")
         }
 
         cancelSession.failTransactionsEnabled = false
@@ -529,7 +529,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 10.0)
 
         XCTAssertTrue(sutSub.entitlementStatus.isActive, "Entitlement via TestSubscriptionOnly.storekit. Check P1 if fails.")
-        XCTAssertNil(sutSub.lastError)
+        XCTAssertNil(sutSub.lastFailure?.error)
         XCTAssertFalse(sessionSub.allTransactions().isEmpty, "SKTestSession (TestSubscriptionOnly.storekit) should have transactions.")
     }
 
@@ -548,15 +548,15 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         await self.sut.purchase(productID: lifetimeProductID)
 
-        if self.sut.lastError == .purchaseCancelled {
+        if self.sut.lastFailure?.error == .purchaseCancelled {
             XCTAssertFalse(self.sut.entitlementStatus.isActive, "Entitlement should not be active after correctly cancelled purchase.")
             print("✅ Non-consumable cancellation simulated as .paymentCancelled correctly using Products.storekit.")
-        } else if self.sut.lastError == .unknown {
+        } else if self.sut.lastFailure?.error == .unknown {
             // Check for P6
             print("⚠️ P6 DETECTED (Products.storekit): `SKTestSession.failureError = .paymentCancelled` resulted in `.unknown` error instead of `.purchaseCancelled`. This is an Apple StoreKit testing bug (P6).")
             XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug where .paymentCancelled results in a generic error.")
         } else {
-            XCTFail("Expected .purchaseCancelled or P6-related .unknown error for non-consumable cancellation, but got \(String(describing: self.sut.lastError)).")
+            XCTFail("Expected .purchaseCancelled or P6-related .unknown error for non-consumable cancellation, but got \(String(describing: self.sut.lastFailure?.error)).")
         }
 
         self.session.failTransactionsEnabled = false // Reset for other tests

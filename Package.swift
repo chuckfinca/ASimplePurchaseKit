@@ -5,8 +5,8 @@ let package = Package(
     name: "ASimplePurchaseKitProject",
     defaultLocalization: "en",
     platforms: [
-        .iOS(.v16),
-        .macOS(.v12) // Keep if any part of your lib/tests is macOS compatible
+        .iOS("16.4"),
+        .macOS("13.3") // Keep if any part of your lib/tests is macOS compatible
     ],
     products: [
         .library(
