@@ -1,0 +1,31 @@
+{
+  "configurations" : [
+    {
+      "id" : "1466977C-CA83-4654-AC4F-0AE5666F814E",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "PurchaseKitIntegrationTests",
+        "name" : "PurchaseKitIntegrationTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "ASimplePurchaseKitTests",
+        "name" : "ASimplePurchaseKitTests"
+      }
+    }
+  ],
+  "version" : 1
+}

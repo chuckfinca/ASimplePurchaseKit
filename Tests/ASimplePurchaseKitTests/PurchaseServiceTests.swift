@@ -222,10 +222,10 @@ final class PurchaseServiceTests: XCTestCase {
         // PurchaseService will then check its underlyingStoreKitProduct.
         let mockProduct = MockProduct.newAutoRenewable(id: mockMonthlyProductID, promotionalOffers: [MockPromotionalOffer(id: mockOfferID)])
         sut.availableProducts = [mockProduct]
-        
+
         // ACT
         await sut.purchase(productID: mockMonthlyProductID, offerID: mockOfferID)
-        
+
         // ASSERT
         // Verifies that even with an offerID, a MockProduct (without underlyingStoreKitProduct)
         // results in the SUT failing early before calling the purchaser.
@@ -292,9 +292,8 @@ final class PurchaseServiceTests: XCTestCase {
 
         XCTAssertTrue(mockDelegate.logEvents.contains(where: {
             $0.level == .error &&
-                ($0.message.contains("adapter without an underlying StoreKit.Product") || // Original log message
-            $0.message.contains("Product \(mockPureProductID) is a mock or adapter without an underlying StoreKit.Product")) && // Current log message
-            $0.context?["productID"] == mockPureProductID &&
+            $0.message.contains("Product \(mockPureProductID) does not have a corresponding StoreKit.Product") &&
+                $0.context?["productID"] == mockPureProductID &&
                 $0.context?["operation"] == "purchase"
         }), "Delegate should log missing underlying product error. Logs: \(mockDelegate.logEvents.map { $0.message })")
     }

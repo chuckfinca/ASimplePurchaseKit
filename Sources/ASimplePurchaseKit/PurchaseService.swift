@@ -32,6 +32,7 @@ public class PurchaseService: ObservableObject {
     private var transactionListener: Task<Void, Error>? = nil
     private let enableLogging: Bool
     private let isUnitTesting_prop: Bool
+    private var storeKitProducts: [String: Product] = [:]
 
     // MARK: - Initialization
     public convenience init(config: PurchaseConfig) {
@@ -135,17 +136,35 @@ public class PurchaseService: ObservableObject {
         log(.info, "Fetching products for IDs: \(productIDs.joined(separator: ", ")).", operation: currentOperation)
 
         do {
-            self.availableProducts = try await productProvider.fetchProducts(for: productIDs)
+            // The provider still returns adapters conforming to ProductProtocol
+            let fetchedProducts: [any ProductProtocol] = try await productProvider.fetchProducts(for: productIDs)
+
+            // Update the public-facing products
+            self.availableProducts = fetchedProducts
+
+            // NEW: Populate the internal lookup dictionary
+            self.storeKitProducts.removeAll()
+            for product in fetchedProducts {
+                // Attempt to get the real StoreKit product from the adapter
+                if let adapter = product as? StoreKitProductAdapter {
+                    self.storeKitProducts[adapter.id] = adapter.underlyingStoreKitProduct
+                }
+            }
+
             log(.info, "Successfully fetched \(availableProducts.count) products.", operation: currentOperation)
+
             if availableProducts.isEmpty && !productIDs.isEmpty {
                 log(.warning, "Fetched 0 products, but product IDs were provided. Check configuration or StoreKit availability.", operation: currentOperation)
                 setFailure(.productsNotFound, operation: currentOperation)
             }
+
         } catch let e as PurchaseError {
             self.availableProducts = []
+            self.storeKitProducts.removeAll()
             setFailure(e, operation: currentOperation)
         } catch {
             self.availableProducts = []
+            self.storeKitProducts.removeAll()
             setFailure(.underlyingError(error), operation: currentOperation)
         }
         setPurchaseState(.idle, operation: currentOperation)
@@ -163,14 +182,14 @@ public class PurchaseService: ObservableObject {
             return
         }
 
-        guard let productToPurchase = availableProducts.first(where: { $0.id == logProductID }) else {
+        guard availableProducts.first(where: { $0.id == logProductID }) != nil else {
             log(.error, "Product ID \(logProductID) not found in availableProducts.", productID: logProductID, operation: currentOperation)
             setFailure(.productNotAvailableForPurchase(productID: logProductID), productID: logProductID, operation: currentOperation)
             return
         }
 
-        guard let underlyingStoreKitProduct = productToPurchase.underlyingStoreKitProduct else {
-            log(.error, "Product \(logProductID) is a mock or adapter without an underlying StoreKit.Product. Cannot purchase.", productID: logProductID, operation: currentOperation)
+        guard let underlyingStoreKitProduct = storeKitProducts[logProductID] else {
+            log(.error, "Product \(logProductID) does not have a corresponding StoreKit.Product. It may be a mock or purchase is not possible.", productID: logProductID, operation: currentOperation)
             setFailure(.productNotAvailableForPurchase(productID: logProductID), productID: logProductID, operation: currentOperation)
             return
         }
@@ -285,7 +304,7 @@ public class PurchaseService: ObservableObject {
                 if let autoRenewPref = renewalInfoPayload.autoRenewPreference { // This seemed to be okay
                     logParts.append("AutoRenewPreferenceProductID: \(autoRenewPref)")
                 }
-                
+
             case .unverified(_, let error):
                 logParts.append("RenewalInfo: Unverified(\(error.localizedDescription))")
             }

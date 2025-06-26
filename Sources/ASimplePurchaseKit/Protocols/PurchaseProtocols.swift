@@ -34,12 +34,6 @@ public protocol ProductProtocol: Identifiable, Sendable where ID == String {
     var price: Decimal { get }
     var isFamilyShareable: Bool { get }
     var subscription: SubscriptionInfoProtocol? { get }
-
-    // Store the original StoreKit.Product if this is an adapter
-    // This is for internal use by PurchaseService to pass to the Purchaser protocol.
-    // Not strictly part of the public protocol surface area for consumers,
-    // but a practical way to manage the underlying StoreKit type.
-    var underlyingStoreKitProduct: Product? { get }
 }
 
 // MARK: - Core Purchase Flow Protocols
