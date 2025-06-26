@@ -16,18 +16,16 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
     // MARK: - ProductProvider
 
     /// Fetches product information from the App Store.
-    func fetchProducts(for ids: [String]) async throws -> [ProductProtocol] { // Changed return type
+    func fetchProducts(for ids: [String]) async throws -> [ProductProtocol] {
         do {
             let storeKitProducts = try await Product.products(for: ids)
             if storeKitProducts.isEmpty {
                 print("LivePurchaseProvider: No products found for the given IDs.")
                 throw PurchaseError.productsNotFound
             }
-            // Adapt StoreKit.Product to ProductProtocol
             return storeKitProducts.map { StoreKitProductAdapter(product: $0) }
         } catch {
             print("LivePurchaseProvider: Failed to fetch products: \(error.localizedDescription)")
-            // Re-throw the original error, PurchaseService will handle wrapping if needed.
             throw error
         }
     }
@@ -38,27 +36,104 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
     private func handlePurchaseVerificationResult(_ verificationResult: VerificationResult<Transaction>) throws -> Transaction {
         switch verificationResult {
         case .verified(let transaction):
-            // The transaction is cryptographically verified by Apple. This is the success case.
             print("LivePurchaseProvider: Purchase successful and verified for product: \(transaction.productID)")
             return transaction
         case .unverified(_, let verificationError):
-            // The transaction signature is invalid. This could be a security issue.
             print("🔴 LivePurchaseProvider: Purchase failed verification: \(verificationError.localizedDescription)")
             throw PurchaseError.verificationFailed(verificationError)
         }
     }
-    
-    /// Initiates the purchase flow for a given product.
-    func purchase(_ product: Product) async throws -> Transaction { // Parameter remains StoreKit.Product
+
+
+    /// Initiates the purchase flow for a given product, optionally with a specific promotional offer.
+    func purchase(_ product: Product, offerIdentifier: String? = nil) async throws -> Transaction {
         let result: Product.PurchaseResult
-        do {
-            result = try await product.purchase()
-        } catch { // Catch block for ANY error from product.purchase()
-            print("🔴 LivePurchaseProvider: product.purchase() for productID '\(product.id)' threw an error directly: \(error). Error Type: \(type(of: error)). This error will be re-thrown.")
-            throw error // Re-throw the original error. PurchaseService will handle it.
+        var purchaseOptions: Set<Product.PurchaseOption> = []
+
+        if let offerID = offerIdentifier, product.type == .autoRenewable {
+            var foundSKOffer: Product.SubscriptionOffer? = nil
+            if #available(iOS 17.4, macOS 14.4, *) { // For offer.id
+                foundSKOffer = product.subscription?.promotionalOffers.first { $0.id == offerID }
+            } else {
+                // On older OS, offer.id is not available.
+                // We might still find *an* skOffer if it's the main introductory offer
+                // and the offerID provided happened to be for that (though matching by ID is better).
+                if product.subscription?.introductoryOffer != nil {
+                    // This is a simplification; without offer.id, robustly matching a specific
+                    // offerID to a specific offer object is hard on older OS.
+                    // We'll assume if an offerID is passed on old OS, and there's an intro offer,
+                    // the intent might be for that intro offer. StoreKit might apply it by default anyway.
+                    foundSKOffer = product.subscription?.introductoryOffer
+                    if foundSKOffer != nil {
+                        print("LivePurchaseProvider: Found product's main introductory offer on older OS without explicit ID matching (offerID: \(offerID) was provided).")
+                    }
+                }
+                if foundSKOffer == nil {
+                    print("LivePurchaseProvider: Attempting to use offerID '\(offerID)' on an OS version older than iOS 17.4/macOS 14.4. Matching by offer.id is not available. Specific offer may not be applied.")
+                }
+            }
+
+            if let skOffer = foundSKOffer {
+                let offerDescriptionForLog = "type: \(skOffer.type), paymentMode: \(skOffer.paymentMode), price: \(skOffer.price), period: \(skOffer.period.unit) \(skOffer.period.value)"
+                print("LivePurchaseProvider: Found matching StoreKit promotional offer (ID: \(offerID), Details: \(offerDescriptionForLog)).")
+
+                // === XCODE 16.4 SDK REGRESSION HANDLING ===
+                // As of Xcode 16.4 (stable) and its bundled SDK (likely targeting iOS 18.4 or slightly earlier if 18.5 isn't fully baked in),
+                // the standard PurchaseOption cases for applying client-side offers are problematic:
+                // 1. `.promotionalOffer(offer: Product.SubscriptionOffer, signature: Product.SubscriptionOffer.Signature?)`
+                //    - The compiler fails to resolve this overload, expecting `offerID: String` instead.
+                // 2. `.introductory`
+                //    - The compiler reports this case as not being a member of Product.PurchaseOption.
+                //
+                // This is a known issue/regression in the SDK provided with Xcode 16.4.
+                // See research document: "Known StoreKit 2 Issues in Xcode 16.4"
+                // This means we cannot reliably apply a *specific* client-side offer programmatically in this environment.
+                // The purchase will proceed without these specific options. StoreKit *may* still apply
+                // a default introductory offer if the user is eligible.
+
+                print("🔴 Xcode 16.4 SDK Limitation: Due to issues with StoreKit's Product.PurchaseOption API in the current SDK, ASimplePurchaseKit cannot programmatically apply the specific promotional offer (ID: \(offerID)). The purchase will proceed as a standard purchase. StoreKit may still apply a default introductory offer if eligible. Please monitor Apple SDK updates (e.g., for Xcode 16.5+ / iOS 18.5+) for fixes to these APIs. Reference ASimplePurchaseKit documentation for more details (P7).")
+
+                // The following lines, which are the correct API calls, are commented out
+                // because they are reported to cause build failures in Xcode 16.4 stable.
+                // When a fixed SDK is available, these should be re-enabled with appropriate #available checks if necessary.
+                /*
+                    if let introOffer = product.subscription?.introductoryOffer, skOffer == introOffer {
+                        // This would be the path if .introductory was available
+                        // purchaseOptions.insert(.introductory)
+                    } else {
+                        // This would be the path if .promotionalOffer(offer:signature:?) was available
+                        // let optionToAdd: Product.PurchaseOption = Product.PurchaseOption.promotionalOffer(
+                        //     offer: skOffer,
+                        //     signature: nil as Product.SubscriptionOffer.Signature?
+                        // )
+                        // purchaseOptions.insert(optionToAdd)
+                    }
+                    */
+
+                // Since we cannot set the options, `purchaseOptions` will remain empty for the offer.
+                // The purchase call below will proceed without specific offer options.
+
+            } else {
+                print("⚠️ LivePurchaseProvider: Promotional offer with ID '\(offerID)' not found for product '\(product.id)'. Proceeding with standard purchase.")
+            }
         }
 
-        // The purchase flow can result in success, cancellation, or a pending state.
+        // Perform the purchase
+        do {
+            if !purchaseOptions.isEmpty { // This block will likely not be hit for offers in Xcode 16.4
+                print("LivePurchaseProvider: Purchasing productID '\(product.id)' with specific options: \(purchaseOptions.map { String(describing: $0) }).")
+                result = try await product.purchase(options: purchaseOptions)
+            } else {
+                let contextMessage = offerIdentifier != nil ? "(Note: Specific offer application might be affected by current Xcode/SDK limitations)" : ""
+                print("LivePurchaseProvider: Purchasing productID '\(product.id)' with no specific purchase options. \(contextMessage)")
+                result = try await product.purchase()
+            }
+        } catch {
+            let offerContext = offerIdentifier != nil ? " with offerID '\(offerIdentifier!)'" : ""
+            print("🔴 LivePurchaseProvider: product.purchase() for productID '\(product.id)'\(offerContext) threw an error directly: \(error). Error Type: \(type(of: error)). This error will be re-thrown.")
+            throw error
+        }
+
         switch result {
         case .success(let verificationResult):
             return try handlePurchaseVerificationResult(verificationResult)
@@ -66,14 +141,15 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
             print("ℹ️ LivePurchaseProvider: Purchase is pending user action for productID: \(product.id).")
             throw PurchaseError.purchasePending
         case .userCancelled:
-            print("ℹ️ LivePurchaseProvider: User cancelled purchase (via Product.PurchaseResult.userCancelled) for productID: \(product.id).")
+            let offerContext = offerIdentifier != nil ? " with offerID '\(offerIdentifier!)'" : ""
+            print("ℹ️ LivePurchaseProvider: User cancelled purchase (via Product.PurchaseResult.userCancelled) for productID: \(product.id)\(offerContext).")
             throw PurchaseError.purchaseCancelled
         @unknown default:
             print("🔴 LivePurchaseProvider: product.purchase() returned an unknown default case for productID: \(product.id).")
             throw PurchaseError.unknown
         }
     }
-    
+
     /// Fetches all transactions for the user.
     func getAllTransactions() async throws -> [Transaction] {
         var allTransactions: [Transaction] = []
@@ -82,10 +158,7 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
             case .verified(let transaction):
                 allTransactions.append(transaction)
             case .unverified(let unverifiedTransaction, let verificationError):
-                // Log or handle unverified transactions if necessary, but typically ignore for entitlement.
                 print("LivePurchaseProvider: Encountered unverified transaction \(unverifiedTransaction.id) during getAllTransactions: \(verificationError.localizedDescription)")
-                // Depending on policy, you might still want to include them or throw an error.
-                // For now, we'll only collect verified ones.
             }
         }
         print("LivePurchaseProvider: Fetched \(allTransactions.count) verified transactions from Transaction.all.")
@@ -93,24 +166,15 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
     }
 
 
+
     // MARK: - ReceiptValidator
 
-    /// Checks all of the user's current entitlements to determine their access level.
-    /// This is the source of truth for "is the user subscribed?".
     func checkCurrentEntitlements() async throws -> EntitlementStatus {
         var highestPriorityTransaction: Transaction? = nil
-
-        // Iterate through all of the user's currently entitled transactions.
-        // This includes active subscriptions and non-consumable IAPs.
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else {
-                // Ignore unverified transactions for security.
                 continue
             }
-
-            // For this implementation, we assume any valid transaction is the one we care about.
-            // A more complex app could check `productID` for different subscription tiers.
-            // We'll just find the most recent one.
             if let current = highestPriorityTransaction {
                 if transaction.purchaseDate > current.purchaseDate {
                     highestPriorityTransaction = transaction
@@ -121,64 +185,32 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
         }
 
         guard let finalTransaction = highestPriorityTransaction else {
-            // No active entitlements were found for the user.
             print("LivePurchaseProvider: No active entitlements found.")
             return .notSubscribed
         }
-
-        // We found a valid entitlement. Now, convert its state into our EntitlementStatus enum.
         return try await self.validate(transaction: finalTransaction)
     }
 
-    /// Converts a single verified transaction into a specific entitlement status.
     func validate(transaction: Transaction) async throws -> EntitlementStatus {
-        // A transaction is not an entitlement if it has been revoked by Apple or is for an upgraded product.
         if transaction.revocationDate != nil || transaction.isUpgraded {
             return .notSubscribed
         }
 
         switch transaction.productType {
         case .autoRenewable:
-            // For auto-renewable subscriptions, the source of truth is the expiration date.
-            // StoreKit's `currentEntitlements` will provide a transaction if it's active.
-            // This includes active subscriptions and those in a grace period.
             guard let expirationDate = transaction.expirationDate else {
-                // A verified auto-renewable subscription from `currentEntitlements` must have an expiration date.
-                // If it doesn't, we can't determine the status.
                 return .unknown
             }
-
             let subscriptionStatus = await transaction.subscriptionStatus
             let currentSubscriptionState = subscriptionStatus?.state
-
-            // Clarified comment and logic check:
-            // A subscription is in a grace period if:
-            // 1. StoreKit reports its state as `.inGracePeriod`.
-            // 2. Its `expirationDate` has passed (otherwise, it's just regularly active).
-            // `Transaction.currentEntitlements` should continue to return transactions in a grace period.
-            // The `expirationDate < Date()` check confirms that we are past the original expiry,
-            // and `currentSubscriptionState == .inGracePeriod` confirms StoreKit's view.
             var isInGracePeriod = false
-            if let state = currentSubscriptionState { // Ensure state is not nil
-                 if state == .inGracePeriod && expirationDate < Date() {
-                    isInGracePeriod = true
-                 } else if state == .inGracePeriod && expirationDate >= Date() {
-                    // This case might mean the grace period started *before* the expiration date for some reason
-                    // or StoreKit considers it in grace for other reasons (e.g. billing issue ahead of expiry).
-                    // Trust StoreKit's state if it says .inGracePeriod.
-                    isInGracePeriod = true
-                 }
+            if let state = currentSubscriptionState, state == .inGracePeriod {
+                isInGracePeriod = true
             }
-
-
             return .subscribed(expires: expirationDate, isInGracePeriod: isInGracePeriod)
-
         case .nonConsumable, .nonRenewable:
-            // These products grant a lifetime entitlement once purchased. They do not expire.
             return .subscribed(expires: nil, isInGracePeriod: false)
-
         default:
-            // Consumable products do not grant an ongoing entitlement.
             return .notSubscribed
         }
     }

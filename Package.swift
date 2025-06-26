@@ -52,7 +52,8 @@ let package = Package(
                 .copy("Resources/Products.storekit"),
                 .copy("Resources/TestLifetimeOnly.storekit"),
                 .copy("Resources/TestMinimalSubscription.storekit"),
-                .copy("Resources/TestSubscriptionOnly.storekit")
+                .copy("Resources/TestSubscriptionOnly.storekit"),
+                .copy("Resources/TestSubscriptionWithIntroOffer.storekit")
             ]
         )
     ]

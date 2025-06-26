@@ -1,0 +1,58 @@
+{
+  "identifier": "INTRO_OFFER_CONFIG_V1_2",
+  "products": [],
+  "subscriptionGroups": [
+    {
+      "id": "SUB_GROUP_WITH_OFFER_A",
+      "name": "Subscription with Offer A",
+      "subscriptions": [
+        {
+          "displayPrice": "9.99",
+          "familyShareable": false,
+          "internalID": "SUB_WITH_INTRO_ID_A01",
+          "introductoryOffer": {
+            "id": "free_trial_7_days_offer_a", 
+            "paymentMode": "free",
+            "subscriptionPeriod": "P7D", 
+            "type": "introductory"
+          },
+          "localizations": [
+            {
+              "description": "Subscription with a 7-day free trial.",
+              "displayName": "Trial Subscription Alpha",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.asimplepurchasekit.sub.withtrial.alpha",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Subscription With Intro Offer Alpha",
+          "type": "RecurringSubscription"
+        },
+        {
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "internalID": "SUB_WITH_PAYUPFRONT_ID_A02",
+          "introductoryOffer": {
+            "id": "pay_upfront_1_month_offer_a",
+            "paymentMode": "payUpFront",
+            "price": "1.99",
+            "subscriptionPeriod": "P1M",
+            "type": "introductory"
+          },
+          "localizations": [
+            {
+              "description": "Subscription with a discounted first month.",
+              "displayName": "Discounted Month Alpha",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.asimplepurchasekit.sub.withdiscount.alpha",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Subscription With Discount Offer Alpha",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": { "major": 1, "minor": 2 }
+}

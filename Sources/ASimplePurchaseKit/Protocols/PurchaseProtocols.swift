@@ -55,8 +55,15 @@ public protocol ProductProvider {
 // Protocol for handling the purchase flow
 @MainActor
 public protocol Purchaser {
-    func purchase(_ product: Product) async throws -> Transaction // Stays StoreKit.Product
-    func getAllTransactions() async throws -> [Transaction] // NEW
+    /// Initiates the purchase flow for a given product, optionally with a specific promotional offer.
+    /// - Parameters:
+    ///   - product: The `StoreKit.Product` to purchase.
+    ///   - offerIdentifier: An optional identifier for a specific promotional offer.
+    ///     This typically corresponds to `StoreKit.Product.SubscriptionOffer.id` (available iOS 17.4+).
+    /// - Returns: A verified `Transaction`.
+    /// - Throws: A `PurchaseError` or underlying StoreKit error if the purchase fails.
+    func purchase(_ product: Product, offerIdentifier: String?) async throws -> Transaction // MODIFIED
+    func getAllTransactions() async throws -> [Transaction]
 }
 
 // Protocol for validating receipts/transactions

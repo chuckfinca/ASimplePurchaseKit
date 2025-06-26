@@ -93,11 +93,11 @@ public struct MockProduct: ProductProtocol, Hashable, Sendable {
     }
 
     // Helper to create a mock auto-renewable product
-    public static func newAutoRenewable(id: String, displayName: String = "Mock Subscription", groupID: String = "group1", period: Product.SubscriptionPeriod = .monthly) -> MockProduct {
+    public static func newAutoRenewable(id: String, displayName: String = "Mock Subscription", groupID: String = "group1", period: Product.SubscriptionPeriod = .monthly, promotionalOffers: [PromotionalOfferProtocol] = []) -> MockProduct { // ADDED promotionalOffers
         MockProduct(id: id,
                     type: .autoRenewable,
                     displayName: displayName,
-                    subscription: MockSubscriptionInfo(subscriptionGroupID: groupID, subscriptionPeriod: period)
+                    subscription: MockSubscriptionInfo(subscriptionGroupID: groupID, promotionalOffers: promotionalOffers, subscriptionPeriod: period)
         )
     }
 
@@ -126,10 +126,11 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
     var allTransactionsResult: Result<[Transaction], Error> = .success([])
 
 
-    // MARK: - Call Counts for Assertions
+    // MARK: - Call Counts and Captured Values for Assertions
 
     var fetchProductsCallCount = 0
     var purchaseCallCount = 0
+    var lastOfferIdentifierPurchased: String? // NEW: To capture offer ID
     var validateCallCount = 0
     var checkCurrentEntitlementsCallCount = 0
     var getAllTransactionsCallCount = 0
@@ -142,8 +143,9 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
         return try productsResult.get()
     }
 
-    func purchase(_ product: Product) async throws -> Transaction {
+    func purchase(_ product: Product, offerIdentifier: String?) async throws -> Transaction { // MODIFIED
         purchaseCallCount += 1
+        lastOfferIdentifierPurchased = offerIdentifier // CAPTURE
         return try purchaseResult.get()
     }
 
@@ -172,6 +174,7 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
 
         fetchProductsCallCount = 0
         purchaseCallCount = 0
+        lastOfferIdentifierPurchased = nil // RESET
         validateCallCount = 0
         checkCurrentEntitlementsCallCount = 0
         getAllTransactionsCallCount = 0
@@ -179,12 +182,22 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
 }
 
 extension Transaction {
+    // This is still problematic to truly mock but keeping for conceptual integrity.
+    // Tests should rely on MockPurchaseProvider's results rather than mock Transactions.
     static func makeMock(productID: String = "mock.product.id",
                          purchaseDate: Date = Date(),
                          productType: Product.ProductType = .autoRenewable,
                          expiresDate: Date? = Calendar.current.date(byAdding: .month, value: 1, to: Date()),
-                         originalID: UInt64 = UInt64.random(in: 1000...9999)) throws -> Transaction {
+                         originalID: UInt64 = UInt64.random(in: 1000...9999),
+                         promotionalOfferID: String? = nil, // NEW conceptual field
+                         subscriptionStatusProvider: (() async -> Product.SubscriptionInfo.Status?)? = nil // NEW For mocking status
+                        ) throws -> Transaction {
         print("⚠️ Transaction.makeMock is a conceptual placeholder. Real Transaction instances are hard to mock fully.")
-        throw NSError(domain: "MockTransactionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot create a fully mock Transaction object for unit tests easily."])
+        // To truly mock Transaction for testing getSubscriptionDetails, we'd need to mock its async `subscriptionStatus` property.
+        // This is non-trivial. The current Transaction.makeMock will still throw.
+        // For testing getSubscriptionDetails, MockPurchaseProvider.allTransactionsResult will need to be set
+        // with *real* Transactions obtained from SKTestSession in an integration test context if deep inspection is needed,
+        // or the test logic for getSubscriptionDetails will need to be adapted to handle this mock limitation.
+        throw NSError(domain: "MockTransactionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot create a fully mock Transaction object for unit tests easily, especially for async properties like subscriptionStatus."])
     }
 }
