@@ -36,7 +36,7 @@ public extension Product.SubscriptionPeriod {
             // Fallback for unknown units
             return "\(self.value) \(self.unitDescription)" // Use a helper for unit string
         }
-        
+
         // If formatter fails (e.g., components are zero, which shouldn't happen here), provide a fallback.
         return formatter.string(from: components) ?? "\(self.value) \(self.unitDescription)"
     }

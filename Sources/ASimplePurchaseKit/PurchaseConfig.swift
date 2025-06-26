@@ -13,7 +13,7 @@ public struct PurchaseConfig {
     /// and in your Xcode `.storekit` test file.
     public let productIDs: [String]
     public let isUnitTesting: Bool
-    public let enableLogging: Bool // NEW
+    public let enableLogging: Bool
 
     public init(productIDs: [String], isUnitTesting: Bool = false, enableLogging: Bool = true) {
         self.productIDs = productIDs

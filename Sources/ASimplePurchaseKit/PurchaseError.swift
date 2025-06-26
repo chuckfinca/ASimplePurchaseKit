@@ -40,7 +40,7 @@ public enum PurchaseError: Error, LocalizedError, Equatable {
             return "An underlying error occurred: \(error.localizedDescription)"
         }
     }
-    
+
     public static func == (lhs: PurchaseError, rhs: PurchaseError) -> Bool {
         switch (lhs, rhs) {
         case (.unknown, .unknown): return true
@@ -55,17 +55,9 @@ public enum PurchaseError: Error, LocalizedError, Equatable {
         case (.missingEntitlement, .missingEntitlement): return true
         case (.productNotAvailableForPurchase(let lID), .productNotAvailableForPurchase(let rID)): return lID == rID
         case (.underlyingError(let lError), .underlyingError(let rError)):
-            // If both are NSErrors, compare domain, code.
-            // Localized description can be too variable or localized for reliable test comparison.
-            if let lnsError = lError as? NSError, let rnsError = rError as? NSError {
-                return lnsError.domain == rnsError.domain &&
-                       lnsError.code == rnsError.code
-                // If you also need to compare userInfo for NSError, that would be more complex.
-                // For test purposes, domain and code are often sufficient for identity.
-            }
-            // Fallback for other error types: compare their string descriptions.
-            // Using String(describing:) can be more stable than localizedDescription for some error types.
-            return String(describing: lError) == String(describing: rError)
+            let lnsError = lError as NSError
+            let rnsError = rError as NSError
+            return lnsError.domain == rnsError.domain && lnsError.code == rnsError.code
         default: return false
         }
     }
@@ -84,13 +76,11 @@ public struct PurchaseFailure: Equatable, Sendable {
         self.operation = operation
         self.timestamp = timestamp
     }
-    
+
     public static func == (lhs: PurchaseFailure, rhs: PurchaseFailure) -> Bool {
         return lhs.error == rhs.error &&
-               lhs.productID == rhs.productID &&
-               lhs.operation == rhs.operation &&
-               // For Date, ensure a tolerance if exact match is problematic in tests
-               // For now, direct equality is fine if timestamps are set carefully.
-               lhs.timestamp == rhs.timestamp
+            lhs.productID == rhs.productID &&
+            lhs.operation == rhs.operation &&
+            lhs.timestamp == rhs.timestamp
     }
 }

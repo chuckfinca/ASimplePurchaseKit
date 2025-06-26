@@ -52,7 +52,7 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
 
         if let offerID = offerIdentifier, product.type == .autoRenewable {
             var foundSKOffer: Product.SubscriptionOffer? = nil
-            
+
             if #available(iOS 17.4, macOS 14.4, *) { // For offer.id
                 foundSKOffer = product.subscription?.promotionalOffers.first { $0.id == offerID }
             } else {

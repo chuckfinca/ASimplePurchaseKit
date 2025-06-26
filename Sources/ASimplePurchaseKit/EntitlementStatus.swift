@@ -11,7 +11,7 @@ public enum EntitlementStatus: Equatable, Sendable {
     case unknown
     case notSubscribed
     case subscribed(expires: Date?, isInGracePeriod: Bool)
-    
+
     public var isActive: Bool {
         if case .subscribed = self {
             return true

@@ -63,7 +63,7 @@ public protocol Purchaser {
 public protocol ReceiptValidator {
     /// Verifies a transaction and returns the current entitlement status.
     func validate(transaction: Transaction) async throws -> EntitlementStatus
-    
+
     /// Checks all current entitlements to determine the user's status.
     func checkCurrentEntitlements() async throws -> EntitlementStatus
 }
