@@ -2,7 +2,7 @@
 //  StoreKitAdapters.swift
 //  ASimplePurchaseKit
 //
-//  Created by AI on Phase 1.
+//  Created by AI
 //
 
 import Foundation
@@ -27,12 +27,8 @@ internal struct StoreKitPromotionalOfferAdapter: PromotionalOfferProtocol, Senda
         return nil // Or some other placeholder if needed for older versions
     }
 
-    // If offer.displayName is truly not available, use a placeholder.
     public var displayName: String {
-        // return offer.displayName // Original problematic line
-        return "Promo: \(offer.paymentMode) for \(offer.period.value) \(offer.period.unit)" // Example constructed name
-        // OR simply: return offer.displayPrice // If this was the previous attempt
-        // OR even: return "Promotional Offer" // Simplest placeholder
+        return "Promo: \(offer.paymentMode) for \(offer.period.value) \(offer.period.unit)"
     }
 
     public var price: Decimal { offer.price }
@@ -61,9 +57,8 @@ internal struct StoreKitSubscriptionInfoAdapter: SubscriptionInfoProtocol, Senda
 @usableFromInline
 internal struct StoreKitProductAdapter: ProductProtocol, Sendable {
 
-    private let _underlyingStoreKitProduct: Product // Keep the actual storage non-optional
+    private let _underlyingStoreKitProduct: Product
 
-    // This computed property now matches the protocol's optionality explicitly
     public var underlyingStoreKitProduct: Product? {
         return _underlyingStoreKitProduct
     }

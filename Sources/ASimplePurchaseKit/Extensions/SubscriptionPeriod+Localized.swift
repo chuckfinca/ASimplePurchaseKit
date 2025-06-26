@@ -8,6 +8,7 @@
 import StoreKit
 
 public extension Product.SubscriptionPeriod {
+
     /// Provides a user-friendly, localized description of the subscription period.
     /// For example, a period of 1 month will be "1 month", 3 months "3 months", 1 year "1 year".
     /// This uses `DateComponentsFormatter` for localization according to the user's locale.
@@ -22,12 +23,6 @@ public extension Product.SubscriptionPeriod {
         case .day:
             components.day = self.value
         case .week:
-            // DateComponentsFormatter handles "week" appropriately if components.day = value * 7
-            // However, using .weekOfMonth directly often yields better phrasing for single weeks.
-            // For multiple weeks (e.g. "2 weeks"), setting days might be better.
-            // Let's rely on .weekOfMonth for simplicity and commonality of "1 week".
-            // If self.value is 1, .weekOfMonth is good. If > 1, setting .day might be better.
-            // For now, this is a reasonable default.
             if self.value == 1 {
                 components.weekOfMonth = self.value
             } else {

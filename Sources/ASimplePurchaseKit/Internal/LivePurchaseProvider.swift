@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import StoreKit // No StoreKitTest import here
+import StoreKit
 
 /// The concrete implementation of the purchase protocols that interacts directly with Apple's StoreKit framework.
 /// This class is internal to the library. The app will only interact with `PurchaseService`.
@@ -16,7 +16,7 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
     // MARK: - ProductProvider
 
     /// Fetches product information from the App Store.
-    func fetchProducts(for ids: [String]) async throws -> [ProductProtocol] {
+    func fetchProducts(for ids: [String]) async throws -> [any ProductProtocol] {
         do {
             let storeKitProducts = try await Product.products(for: ids)
             if storeKitProducts.isEmpty {
@@ -52,6 +52,7 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
 
         if let offerID = offerIdentifier, product.type == .autoRenewable {
             var foundSKOffer: Product.SubscriptionOffer? = nil
+            
             if #available(iOS 17.4, macOS 14.4, *) { // For offer.id
                 foundSKOffer = product.subscription?.promotionalOffers.first { $0.id == offerID }
             } else {
@@ -86,7 +87,6 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
                 //    - The compiler reports this case as not being a member of Product.PurchaseOption.
                 //
                 // This is a known issue/regression in the SDK provided with Xcode 16.4.
-                // See research document: "Known StoreKit 2 Issues in Xcode 16.4"
                 // This means we cannot reliably apply a *specific* client-side offer programmatically in this environment.
                 // The purchase will proceed without these specific options. StoreKit *may* still apply
                 // a default introductory offer if the user is eligible.

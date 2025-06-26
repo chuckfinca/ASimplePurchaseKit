@@ -17,14 +17,12 @@ public protocol PromotionalOfferProtocol: Sendable {
     var paymentMode: Product.SubscriptionOffer.PaymentMode { get }
     var period: Product.SubscriptionPeriod { get }
     var type: Product.SubscriptionOffer.OfferType { get }
-    // Add other relevant properties from StoreKit.Product.SubscriptionOffer as needed
 }
 
 public protocol SubscriptionInfoProtocol: Sendable {
     var subscriptionGroupID: String { get }
     var promotionalOffers: [PromotionalOfferProtocol] { get }
     var subscriptionPeriod: Product.SubscriptionPeriod { get }
-    // Add other relevant properties from StoreKit.Product.SubscriptionInfo as needed
 }
 
 public protocol ProductProtocol: Identifiable, Sendable where ID == String {
@@ -49,7 +47,7 @@ public protocol ProductProtocol: Identifiable, Sendable where ID == String {
 // Protocol for fetching product information
 @MainActor
 public protocol ProductProvider {
-    func fetchProducts(for ids: [String]) async throws -> [ProductProtocol] // Changed to ProductProtocol
+    func fetchProducts(for ids: [String]) async throws -> [any ProductProtocol]
 }
 
 // Protocol for handling the purchase flow
@@ -62,7 +60,7 @@ public protocol Purchaser {
     ///     This typically corresponds to `StoreKit.Product.SubscriptionOffer.id` (available iOS 17.4+).
     /// - Returns: A verified `Transaction`.
     /// - Throws: A `PurchaseError` or underlying StoreKit error if the purchase fails.
-    func purchase(_ product: Product, offerIdentifier: String?) async throws -> Transaction // MODIFIED
+    func purchase(_ product: Product, offerIdentifier: String?) async throws -> Transaction
     func getAllTransactions() async throws -> [Transaction]
 }
 
@@ -84,5 +82,4 @@ public enum LogLevel: Sendable {
 
 public protocol PurchaseServiceDelegate: AnyObject, Sendable {
     func purchaseService(didLog event: String, level: LogLevel, context: [String: String]?)
-    // func purchaseService(didUpdateMetrics: PurchaseMetrics) // Future: For more detailed metrics
 }
