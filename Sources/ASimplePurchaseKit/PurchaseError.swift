@@ -1,5 +1,9 @@
-// File: Sources/ASimplePurchaseKit/PurchaseError.swift
-// (Assuming this is the path based on your tree structure)
+//
+//  PurchaseError.swift
+//  ASimplePurchaseKit
+//
+//  Created by Charles Feinn.
+//
 
 import Foundation
 import StoreKit

@@ -1,13 +1,18 @@
-// File: Sources/ASimplePurchaseKit/PurchaseService.swift
+//
+//  PurchaseState.swift
+//  ASimplePurchaseKit
+//
+//  Created by Charles Feinn.
+//
 
 import Foundation
-import StoreKit // For SKPaymentQueue (SK1) for canMakePayments
+import StoreKit
 import Combine
 
 public enum PurchaseState: Equatable, Sendable {
     case idle
     case fetchingProducts
-    case purchasing(productID: String) // Stays simple for now; offerID is logged
+    case purchasing(productID: String)
     case restoring
     case checkingEntitlement
 }
@@ -16,18 +21,21 @@ public enum PurchaseState: Equatable, Sendable {
 public class PurchaseService: ObservableObject {
 
     // MARK: - Published State
-    @Published public internal(set) var availableProducts: [ProductProtocol] = []
+    
+    @Published public internal(set) var availableProducts: [any ProductProtocol] = []
     @Published public internal(set) var entitlementStatus: EntitlementStatus = .unknown
     @Published public internal(set) var purchaseState: PurchaseState = .idle
     @Published public private(set) var lastFailure: PurchaseFailure?
 
     // MARK: - Dependencies
+    
     private let productProvider: ProductProvider
     private let purchaser: Purchaser
     private let receiptValidator: ReceiptValidator
     public weak var delegate: PurchaseServiceDelegate?
 
     // MARK: - Private State
+    
     private let productIDs: [String]
     private var transactionListener: Task<Void, Error>? = nil
     private let enableLogging: Bool
@@ -35,6 +43,7 @@ public class PurchaseService: ObservableObject {
     private var storeKitProducts: [String: Product] = [:]
 
     // MARK: - Initialization
+    
     public convenience init(config: PurchaseConfig) {
         let liveProvider = LivePurchaseProvider()
         self.init(
@@ -68,14 +77,11 @@ public class PurchaseService: ObservableObject {
             self.transactionListener = Task.detached { [weak self] in
                 guard let self = self else { return }
                 await self.logOnMainActor(.debug, "Transaction.updates listener starting.", operation: "transactionListener")
-                do {
-                    for await result in Transaction.updates {
-                        await self.handle(transactionResult: result)
-                    }
-                    await self.logOnMainActor(.debug, "Transaction.updates listener ended normally.", operation: "transactionListener")
-                } catch {
-                    await self.logOnMainActor(.error, "Transaction.updates listener terminated with error.", error: error, operation: "transactionListener")
+
+                for await result in Transaction.updates {
+                    await self.handle(transactionResult: result)
                 }
+                await self.logOnMainActor(.debug, "Transaction.updates listener ended normally.", operation: "transactionListener")
             }
         }
 
@@ -91,6 +97,7 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Logging Helpers
+    
     private func log(_ level: LogLevel, _ message: String, productID: String? = nil, error: Error? = nil, operation: String? = nil) {
         if !enableLogging && level == .debug { return }
 
@@ -125,6 +132,7 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Public API - Product Fetching
+    
     public func fetchProducts() async {
         let currentOperation = "fetchProducts"
         guard purchaseState != .fetchingProducts else {
@@ -142,7 +150,7 @@ public class PurchaseService: ObservableObject {
             // Update the public-facing products
             self.availableProducts = fetchedProducts
 
-            // NEW: Populate the internal lookup dictionary
+            // Populate the internal lookup dictionary
             self.storeKitProducts.removeAll()
             for product in fetchedProducts {
                 // Attempt to get the real StoreKit product from the adapter
@@ -171,6 +179,7 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Public API - Purchasing
+    
     public func purchase(productID: String, offerID: String? = nil) async {
         let currentOperation = "purchase"
         let logProductID = productID
@@ -202,14 +211,19 @@ public class PurchaseService: ObservableObject {
         do {
             let transaction = try await purchaser.purchase(underlyingStoreKitProduct, offerIdentifier: logOfferID)
             log(.info, "Purchase successful for productID: \(logProductID), transactionID: \(transaction.id). Validating...", productID: logProductID, operation: currentOperation)
+            
             self.entitlementStatus = try await receiptValidator.validate(transaction: transaction)
             log(.info, "Entitlement updated to \(self.entitlementStatus) after purchase of \(logProductID). Finishing transaction.", productID: logProductID, operation: currentOperation)
+            
             await transaction.finish()
             log(.info, "Transaction finished for \(logProductID).", productID: logProductID, operation: currentOperation)
+            
         } catch let e as PurchaseError {
             setFailure(e, productID: logProductID, operation: currentOperation)
+            
         } catch let skError as SKError {
             log(.error, "Purchase failed for productID \(logProductID) with SKError.", productID: logProductID, error: skError, operation: currentOperation)
+            
             switch skError.code {
             case .paymentCancelled:
                 setFailure(.purchaseCancelled, productID: logProductID, operation: currentOperation)
@@ -224,7 +238,7 @@ public class PurchaseService: ObservableObject {
         setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
     }
 
-    public func eligiblePromotionalOffers(for product: ProductProtocol) -> [PromotionalOfferProtocol] {
+    public func eligiblePromotionalOffers(for product: any ProductProtocol) -> [PromotionalOfferProtocol] {
         let currentOperation = "eligiblePromotionalOffers"
         guard product.type == .autoRenewable, let subInfo = product.subscription else {
             log(.debug, "Product \(product.id) is not an auto-renewable subscription or has no subscription info. No promotional offers.", productID: product.id, operation: currentOperation)
@@ -236,10 +250,12 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Public API - Transactions & Entitlement
+    
     public func getAllTransactions() async -> [Transaction] {
         let currentOperation = "getAllTransactions"
         log(.info, "Attempting to get all transactions.", operation: currentOperation)
         self.lastFailure = nil
+        
         do {
             let transactions = try await purchaser.getAllTransactions()
             log(.info, "Successfully fetched \(transactions.count) transactions.", operation: currentOperation)
@@ -294,7 +310,7 @@ public class PurchaseService: ObservableObject {
             switch status.renewalInfo {
             case .verified(let renewalInfoPayload):
                 logParts.append("WillAutoRenewNextPeriod: \(renewalInfoPayload.willAutoRenew)")
-                logParts.append("NextRenewalAttemptDate: \(renewalInfoPayload.renewalDate)") // Using renewalDate
+                logParts.append("NextRenewalAttemptDate: \(String(describing: renewalInfoPayload.renewalDate))") 
                 // Add other known-to-exist and simple properties from renewalInfoPayload if desired for logging
                 // For example: renewalInfoPayload.originalTransactionID, renewalInfoPayload.productID
                 // Avoid properties that your Xcode 16.4 compiler flags as missing.
