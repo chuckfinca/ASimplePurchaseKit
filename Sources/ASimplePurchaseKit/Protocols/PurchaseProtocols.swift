@@ -68,7 +68,7 @@ public protocol ReceiptValidator {
     func checkCurrentEntitlements() async throws -> EntitlementStatus
 }
 
-// MARK: - Delegate Protocol (NEW)
+// MARK: - Delegate Protocol
 
 public enum LogLevel: Sendable {
     case debug, info, warning, error
@@ -76,4 +76,24 @@ public enum LogLevel: Sendable {
 
 public protocol PurchaseServiceDelegate: AnyObject, Sendable {
     func purchaseService(didLog event: String, level: LogLevel, context: [String: String]?)
+}
+
+// MARK: - System Service Protocols
+
+/// A protocol that abstracts the behavior of listening for transaction updates.
+/// This allows for a mock implementation during unit tests.
+@MainActor
+public protocol TransactionListenerProvider {
+    /// Starts a listener that provides transaction updates.
+    /// - Parameter updateHandler: A closure to be called with each new transaction result.
+    /// - Returns: A `Task` handle for the listening process, which can be cancelled.
+    func listenForTransactions(updateHandler: @escaping @Sendable (VerificationResult<Transaction>) async -> Void) -> Task<Void, Error>
+}
+
+/// A protocol that abstracts the App Store sync action.
+/// This allows for a mock implementation during unit tests.
+@MainActor
+public protocol AppStoreSyncer {
+    /// Initiates a sync with the App Store to check for new transactions.
+    func sync() async throws
 }

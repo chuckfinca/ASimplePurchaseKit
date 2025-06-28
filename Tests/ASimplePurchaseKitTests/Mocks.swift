@@ -201,3 +201,47 @@ extension Transaction {
         throw NSError(domain: "MockTransactionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot create a fully mock Transaction object for unit tests easily, especially for async properties like subscriptionStatus."])
     }
 }
+
+// MARK: - New Mock System Service Providers
+
+@MainActor
+class MockTransactionListenerProvider: TransactionListenerProvider {
+    // We can capture the handler to manually trigger it in tests
+    var updateHandler: ((VerificationResult<Transaction>) async -> Void)?
+    var listenForTransactionsCallCount = 0
+
+    func listenForTransactions(updateHandler: @escaping (VerificationResult<Transaction>) async -> Void) -> Task<Void, Error> {
+        listenForTransactionsCallCount += 1
+        self.updateHandler = updateHandler
+        // Return a dummy task that does nothing, but can be cancelled.
+        return Task { /* Do nothing */ }
+    }
+    
+    // Helper for tests to simulate a transaction update
+    func triggerTransactionUpdate(_ result: VerificationResult<Transaction>) async {
+        await updateHandler?(result)
+    }
+
+    func reset() {
+        updateHandler = nil
+        listenForTransactionsCallCount = 0
+    }
+}
+
+@MainActor
+class MockAppStoreSyncer: AppStoreSyncer {
+    var syncCallCount = 0
+    var syncShouldThrowError: Error?
+
+    func sync() async throws {
+        syncCallCount += 1
+        if let error = syncShouldThrowError {
+            throw error
+        }
+    }
+
+    func reset() {
+        syncCallCount = 0
+        syncShouldThrowError = nil
+    }
+}

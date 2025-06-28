@@ -21,37 +21,42 @@ public enum PurchaseState: Equatable, Sendable {
 public class PurchaseService: ObservableObject {
 
     // MARK: - Published State
-    
+
     @Published public internal(set) var availableProducts: [any ProductProtocol] = []
     @Published public internal(set) var entitlementStatus: EntitlementStatus = .unknown
     @Published public internal(set) var purchaseState: PurchaseState = .idle
     @Published public private(set) var lastFailure: PurchaseFailure?
 
     // MARK: - Dependencies
-    
+
     private let productProvider: ProductProvider
     private let purchaser: Purchaser
     private let receiptValidator: ReceiptValidator
+    private let transactionListenerProvider: TransactionListenerProvider
+    private let appStoreSyncer: AppStoreSyncer
     public weak var delegate: PurchaseServiceDelegate?
 
     // MARK: - Private State
-    
+
     private let productIDs: [String]
     private var transactionListener: Task<Void, Error>? = nil
     private let enableLogging: Bool
-    private let isUnitTesting_prop: Bool
     private var storeKitProducts: [String: Product] = [:]
 
     // MARK: - Initialization
-    
+
     public convenience init(config: PurchaseConfig) {
         let liveProvider = LivePurchaseProvider()
+        let liveListenerProvider = LiveTransactionListenerProvider()
+        let liveSyncer = LiveAppStoreSyncer()
+
         self.init(
             productIDs: config.productIDs,
             productProvider: liveProvider,
             purchaser: liveProvider,
             receiptValidator: liveProvider,
-            isUnitTesting: config.isUnitTesting,
+            transactionListenerProvider: liveListenerProvider,
+            appStoreSyncer: liveSyncer,
             enableLogging: config.enableLogging
         )
     }
@@ -61,28 +66,28 @@ public class PurchaseService: ObservableObject {
         productProvider: ProductProvider,
         purchaser: Purchaser,
         receiptValidator: ReceiptValidator,
-        isUnitTesting: Bool = false,
+        transactionListenerProvider: TransactionListenerProvider,
+        appStoreSyncer: AppStoreSyncer,
         enableLogging: Bool = true
     ) {
         self.productIDs = productIDs
         self.productProvider = productProvider
         self.purchaser = purchaser
         self.receiptValidator = receiptValidator
+        self.transactionListenerProvider = transactionListenerProvider
+        self.appStoreSyncer = appStoreSyncer
         self.enableLogging = enableLogging
-        self.isUnitTesting_prop = isUnitTesting
 
-        log(.info, "Initializing PurchaseService. Unit testing: \(isUnitTesting), Product IDs: \(productIDs.joined(separator: ", ")).")
+        log(.info, "Initializing PurchaseService. Product IDs: \(productIDs.joined(separator: ", ")).")
 
-        if !isUnitTesting_prop {
-            self.transactionListener = Task.detached { [weak self] in
-                guard let self = self else { return }
-                await self.logOnMainActor(.debug, "Transaction.updates listener starting.", operation: "transactionListener")
+        self.transactionListener = Task.detached { [weak self] in
+            guard let self = self else { return }
+            await self.logOnMainActor(.debug, "Transaction.updates listener starting.", operation: "transactionListener")
 
-                for await result in Transaction.updates {
-                    await self.handle(transactionResult: result)
-                }
-                await self.logOnMainActor(.debug, "Transaction.updates listener ended normally.", operation: "transactionListener")
+            for await result in Transaction.updates {
+                await self.handle(transactionResult: result)
             }
+            await self.logOnMainActor(.debug, "Transaction.updates listener ended normally.", operation: "transactionListener")
         }
 
         Task { [weak self] in
@@ -97,7 +102,7 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Logging Helpers
-    
+
     private func log(_ level: LogLevel, _ message: String, productID: String? = nil, error: Error? = nil, operation: String? = nil) {
         if !enableLogging && level == .debug { return }
 
@@ -132,7 +137,7 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Public API - Product Fetching
-    
+
     public func fetchProducts() async {
         let currentOperation = "fetchProducts"
         guard purchaseState != .fetchingProducts else {
@@ -179,7 +184,7 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Public API - Purchasing
-    
+
     public func purchase(productID: String, offerID: String? = nil) async {
         let currentOperation = "purchase"
         let logProductID = productID
@@ -211,19 +216,19 @@ public class PurchaseService: ObservableObject {
         do {
             let transaction = try await purchaser.purchase(underlyingStoreKitProduct, offerIdentifier: logOfferID)
             log(.info, "Purchase successful for productID: \(logProductID), transactionID: \(transaction.id). Validating...", productID: logProductID, operation: currentOperation)
-            
+
             self.entitlementStatus = try await receiptValidator.validate(transaction: transaction)
             log(.info, "Entitlement updated to \(self.entitlementStatus) after purchase of \(logProductID). Finishing transaction.", productID: logProductID, operation: currentOperation)
-            
+
             await transaction.finish()
             log(.info, "Transaction finished for \(logProductID).", productID: logProductID, operation: currentOperation)
-            
+
         } catch let e as PurchaseError {
             setFailure(e, productID: logProductID, operation: currentOperation)
-            
+
         } catch let skError as SKError {
             log(.error, "Purchase failed for productID \(logProductID) with SKError.", productID: logProductID, error: skError, operation: currentOperation)
-            
+
             switch skError.code {
             case .paymentCancelled:
                 setFailure(.purchaseCancelled, productID: logProductID, operation: currentOperation)
@@ -250,12 +255,12 @@ public class PurchaseService: ObservableObject {
     }
 
     // MARK: - Public API - Transactions & Entitlement
-    
+
     public func getAllTransactions() async -> [Transaction] {
         let currentOperation = "getAllTransactions"
         log(.info, "Attempting to get all transactions.", operation: currentOperation)
         self.lastFailure = nil
-        
+
         do {
             let transactions = try await purchaser.getAllTransactions()
             log(.info, "Successfully fetched \(transactions.count) transactions.", operation: currentOperation)
@@ -310,7 +315,7 @@ public class PurchaseService: ObservableObject {
             switch status.renewalInfo {
             case .verified(let renewalInfoPayload):
                 logParts.append("WillAutoRenewNextPeriod: \(renewalInfoPayload.willAutoRenew)")
-                logParts.append("NextRenewalAttemptDate: \(String(describing: renewalInfoPayload.renewalDate))") 
+                logParts.append("NextRenewalAttemptDate: \(String(describing: renewalInfoPayload.renewalDate))")
                 // Add other known-to-exist and simple properties from renewalInfoPayload if desired for logging
                 // For example: renewalInfoPayload.originalTransactionID, renewalInfoPayload.productID
                 // Avoid properties that your Xcode 16.4 compiler flags as missing.
@@ -347,17 +352,13 @@ public class PurchaseService: ObservableObject {
         self.lastFailure = nil
         log(.info, "Attempting to restore purchases.", operation: currentOperation)
 
-        if !self.isUnitTesting_prop {
-            do {
-                log(.debug, "Calling AppStore.sync().", operation: currentOperation)
-                try await AppStore.sync()
-                log(.info, "AppStore.sync() completed.", operation: currentOperation)
-            } catch {
-                log(.error, "AppStore.sync() failed during restore.", error: error, operation: "\(currentOperation)_sync")
-                setFailure(.underlyingError(error), operation: "\(currentOperation)_sync")
-            }
-        } else {
-            log(.debug, "Skipping AppStore.sync() due to isUnitTesting=true.", operation: currentOperation)
+        do {
+            log(.debug, "Calling AppStoreSyncer.sync().", operation: currentOperation)
+            try await appStoreSyncer.sync()
+            log(.info, "AppStoreSyncer.sync() completed.", operation: currentOperation)
+        } catch {
+            log(.error, "AppStoreSyncer.sync() failed during restore.", error: error, operation: "\(currentOperation)_sync")
+            setFailure(.underlyingError(error), operation: "\(currentOperation)_sync")
         }
 
         await _updateEntitlementStatusInternal(operation: "\(currentOperation)_updateEntitlement")

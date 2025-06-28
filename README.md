@@ -345,7 +345,9 @@ class MyAppPurchaseDelegate: PurchaseServiceDelegate, @unchecked Sendable { // E
 
 ## 🧪 Testing
 
-The library is designed to be easily testable. You can initialize `PurchaseService` with a `MockPurchaseProvider` (available in the `ASimplePurchaseKitTests` target if you import it as `@testable`) to simulate any StoreKit scenario without needing the network or a `.storekit` file for *unit tests*.
+The library is designed to be easily testable. You can initialize `PurchaseService` with mock providers (available in the `ASimplePurchaseKitTests` target if you import it as `@testable`) to simulate any StoreKit scenario without needing the network or a `.storekit` file for your *unit tests*.
+
+This approach, known as dependency injection, allows you to take full control over the service's external interactions.
 
 ```swift
 import XCTest
@@ -356,16 +358,25 @@ import StoreKit // For Product.ProductType, etc.
 final class MyViewModelTests: XCTestCase {
 
     var purchaseService: PurchaseService!
-    var mockProvider: MockPurchaseProvider! // MockPurchaseProvider is in ASimplePurchaseKitTests
+    var mockProvider: MockPurchaseProvider!
+    // Mocks for system-level interactions
+    var mockListenerProvider: MockTransactionListenerProvider!
+    var mockSyncer: MockAppStoreSyncer!
 
+    // Helper to set up the SUT with all mock dependencies
     func initializeSUT(productIDs: [String]) {
         mockProvider = MockPurchaseProvider()
+        mockListenerProvider = MockTransactionListenerProvider()
+        mockSyncer = MockAppStoreSyncer()
+        
         purchaseService = PurchaseService(
             productIDs: productIDs,
             productProvider: mockProvider,
             purchaser: mockProvider,
             receiptValidator: mockProvider,
-            isUnitTesting: true, // Important for skipping live transaction listener
+            // Inject the mock system providers
+            transactionListenerProvider: mockListenerProvider,
+            appStoreSyncer: mockSyncer,
             enableLogging: false
         )
     }
@@ -379,25 +390,17 @@ final class MyViewModelTests: XCTestCase {
         
         // 1. Configure mock provider for product fetching
         mockProvider.productsResult = .success([mockProduct])
-        await purchaseService.fetchProducts() // SUT calls fetchProducts internally on init or explicitly
+        await purchaseService.fetchProducts()
     
         // Verify product is available
         XCTAssertTrue(purchaseService.availableProducts.contains(where: { $0.id == productID }))
     
-        // 2. Configure mock provider for purchase success and subsequent validation
-        // Transaction.makeMock throws, so we set purchaseResult with a conceptual success.
-        // The actual Transaction object is opaque for unit tests; we care about the flow.
-        let mockTransaction = try Transaction.makeMock(productID: productID, productType: .nonConsumable) // Conceptual, will throw
-        mockProvider.purchaseResult = .success(mockTransaction) // This won't be hit if makeMock throws
-                                                                 // Let's assume it could be set with a real one
-                                                                 // if we were in an integration test context.
-                                                                 // For pure unit tests, we control the *flow*.
-
-        // Better: For unit tests, we often don't need a real Transaction instance from `purchaseResult`
-        // if we are testing how PurchaseService handles the *outcome* of `validate(transaction:)`.
-        // Let's simulate the flow: purchase() calls mockProvider.purchase(), then validate().
-        
-        mockProvider.entitlementResult = .success(.subscribed(expires: nil, isInGracePeriod: false)) // This will be returned by validate()
+        // 2. To test the successful purchase path:
+        // Set up the mock to return a subscribed status when validation is requested.
+        // The purchase() method inside the SUT will fail early if it's given a MockProduct
+        // that doesn't have an underlying StoreKit.Product.
+        // So, for unit testing, we often test the component parts.
+        // Let's test that a successful restore updates the entitlement correctly.
 
         let expectation = XCTestExpectation(description: "Entitlement status changes to active")
         let cancellable = purchaseService.$entitlementStatus.dropFirst().sink { status in
@@ -406,58 +409,20 @@ final class MyViewModelTests: XCTestCase {
             }
         }
     
-        // ACT: Simulate a purchase
-        // Since `purchaseService.purchase` needs an `underlyingStoreKitProduct` which MockProduct doesn't have,
-        // directly testing a *successful* purchase call that goes through `mockProvider.purchase` is tricky
-        // for `MockProduct` that isn't a `StoreKitProductAdapter`.
-        //
-        // Alternative for unit testing the purchase *logic path*:
-        // If the goal is to test that after a conceptual successful purchase, entitlement updates:
-        // Set up `mockProvider.purchaseResult` (conceptually) and then directly call
-        // the logic that would happen post-purchase, or trigger an entitlement update.
-
-        // For this example, let's assume `purchase` could proceed (e.g., availableProducts had a StoreKitProductAdapter)
-        // and mockProvider.purchase() returned success. The next step is validation.
-        // Since we can't easily mock `Transaction` for `purchaseResult`, we'll assume the purchase was successful
-        // and test the subsequent `validate` call by triggering an entitlement update.
-        
-        // If purchaseService.purchase was called:
-        // await purchaseService.purchase(productID: productID, offerID: nil)
-        // This would call mockProvider.purchase(...)
-        // then mockProvider.validate(...)
-        
-        // To directly test the validation path after a conceptual purchase:
-        // Assume a transaction `tx` was received.
-        // purchaseService.entitlementStatus = try await mockProvider.validate(transaction: tx)
-        // This is what happens inside the purchase method.
-        
-        // Let's refine the test to reflect a common unit test pattern:
-        // We set the SUT's availableProducts.
-        // We configure the mockProvider's `purchaseResult` and `entitlementResult`.
-        // We call `sut.purchase()`.
-        
-        // As `MockProduct.underlyingStoreKitProduct` is nil, the purchase call in SUT will fail early
-        // with `.productNotAvailableForPurchase`.
-        // To truly unit test the happy path of `purchase` through to `validate` without StoreKit.Product,
-        // the `Purchaser` protocol would need to take `ProductProtocol`.
-        // Given current structure, we test the error path for MockProduct:
-        
-        await purchaseService.purchase(productID: productID, offerID: nil)
-        XCTAssertEqual(purchaseService.lastFailure?.error, .productNotAvailableForPurchase(productID: productID))
-        
-        // To test the *successful* validation path (as if a purchase succeeded):
+        // ACT: Simulate a successful restore by configuring the mock and calling the method
         mockProvider.entitlementResult = .success(.subscribed(expires: nil, isInGracePeriod: false))
-        await purchaseService.updateEntitlementStatus() // This will call mockProvider.checkCurrentEntitlements
-
+        await purchaseService.restorePurchases()
+        
+        // ASSERT
+        // Verify that the service called the app store syncer
+        XCTAssertEqual(mockSyncer.syncCallCount, 1)
+        // Verify that the entitlement was updated
         await fulfillment(of: [expectation], timeout: 1.0)
         XCTAssertTrue(purchaseService.entitlementStatus.isActive)
-        // XCTAssertNil(purchaseService.lastFailure) // lastFailure would be from the purchase attempt
+        
         cancellable.cancel()
     }
 }
-```
-
-This README update reflects the new public API for purchasing (`purchase(productID:offerID:)`) and provides a more realistic testing example acknowledging the `underlyingStoreKitProduct` constraint for `MockProduct` in the SUT's purchase flow.
 
 ## 🏗️ Architecture
 

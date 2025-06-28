@@ -79,10 +79,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             print("⚠️ [SETUP] Direct product check (Product.products(for:)) failed: \(error) using Products.storekit")
         }
 
-        config = PurchaseConfig(productIDs: allTestProductIDs, isUnitTesting: false, enableLogging: true) // Enable logging
+        config = PurchaseConfig(productIDs: allTestProductIDs, enableLogging: true) // Enable logging
         sut = PurchaseService(config: config)
         cancellables = []
-        print("🧪 [SETUP] PurchaseService (SUT for Products.storekit) initialized with isUnitTesting: false.")
+        print("🧪 [SETUP] PurchaseService (SUT for Products.storekit) initialized.")
 
         print("🧪 [SETUP] SUT's init (Products.storekit) should have fetched products. Available products in SUT: \(sut.availableProducts.count)")
 
@@ -230,10 +230,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             print("🧪 [FOCUSED SETUP] Direct check (Product.all) from StoreKit: Product.products(for: []) found \(allDirect.count) products for \(storeKitFilename).")
         }
 
-        let newConfig = PurchaseConfig(productIDs: productIDsForConfig, isUnitTesting: false, enableLogging: true) // Enable logging
+        let newConfig = PurchaseConfig(productIDs: productIDsForConfig, enableLogging: true) // Enable logging
         let newSut = PurchaseService(config: newConfig)
         var newCancellables = Set<AnyCancellable>()
-        print("🧪 [FOCUSED SETUP] PurchaseService (SUT) initialized for \(storeKitFilename) with isUnitTesting: false.")
+        print("🧪 [FOCUSED SETUP] PurchaseService (SUT) initialized for \(storeKitFilename).")
 
         print("🧪 [FOCUSED SETUP] SUT's init for \(storeKitFilename) should have fetched. Available products: \(newSut.availableProducts.count)")
 

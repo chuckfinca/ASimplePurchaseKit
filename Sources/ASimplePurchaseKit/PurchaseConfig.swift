@@ -12,12 +12,10 @@ public struct PurchaseConfig {
     /// These should match the Product IDs you set up in App Store Connect
     /// and in your Xcode `.storekit` test file.
     public let productIDs: [String]
-    public let isUnitTesting: Bool
     public let enableLogging: Bool
 
-    public init(productIDs: [String], isUnitTesting: Bool = false, enableLogging: Bool = true) {
+    public init(productIDs: [String], enableLogging: Bool = true) {
         self.productIDs = productIDs
-        self.isUnitTesting = isUnitTesting
         self.enableLogging = enableLogging
     }
 }

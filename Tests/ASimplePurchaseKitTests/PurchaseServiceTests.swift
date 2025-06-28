@@ -8,6 +8,8 @@ final class PurchaseServiceTests: XCTestCase {
 
     var sut: PurchaseService!
     var mockProvider: MockPurchaseProvider!
+    var mockListenerProvider: MockTransactionListenerProvider!
+    var mockSyncer: MockAppStoreSyncer!
     var mockDelegate: MockPurchaseServiceDelegate!
     var cancellables: Set<AnyCancellable>!
 
@@ -20,6 +22,8 @@ final class PurchaseServiceTests: XCTestCase {
     override func setUp() async throws {
         cancellables = []
         mockProvider = MockPurchaseProvider()
+        mockListenerProvider = MockTransactionListenerProvider()
+        mockSyncer = MockAppStoreSyncer()
         mockDelegate = MockPurchaseServiceDelegate()
         // SUT initialization is deferred to helper or specific tests
     }
@@ -31,7 +35,8 @@ final class PurchaseServiceTests: XCTestCase {
             productProvider: mockProvider,
             purchaser: mockProvider,
             receiptValidator: mockProvider,
-            isUnitTesting: true,
+            transactionListenerProvider: mockListenerProvider,
+            appStoreSyncer: mockSyncer,
             enableLogging: enableLogging
         )
         sut.delegate = mockDelegate
@@ -40,6 +45,8 @@ final class PurchaseServiceTests: XCTestCase {
     override func tearDown() async throws {
         sut = nil
         mockProvider = nil
+        mockListenerProvider = nil
+        mockSyncer = nil
         mockDelegate = nil
         cancellables?.forEach { $0.cancel() }
         cancellables = nil
@@ -292,7 +299,7 @@ final class PurchaseServiceTests: XCTestCase {
 
         XCTAssertTrue(mockDelegate.logEvents.contains(where: {
             $0.level == .error &&
-            $0.message.contains("Product \(mockPureProductID) does not have a corresponding StoreKit.Product") &&
+                $0.message.contains("Product \(mockPureProductID) does not have a corresponding StoreKit.Product") &&
                 $0.context?["productID"] == mockPureProductID &&
                 $0.context?["operation"] == "purchase"
         }), "Delegate should log missing underlying product error. Logs: \(mockDelegate.logEvents.map { $0.message })")
@@ -396,12 +403,13 @@ final class PurchaseServiceTests: XCTestCase {
     }
 
     // MARK: - Restore Purchases Tests
-    func test_restorePurchases_isUnitTestingTrue_callsCheckEntitlements_updatesStatus() async {
+    func test_restorePurchases_callsCheckEntitlementsAndSync_updatesStatus() async {
         // ARRANGE
-        initializeSUT(enableLogging: true) // isUnitTesting is true by default in helper
-        await Task.yield()
+        initializeSUT(enableLogging: true)
+        await Task.yield() // Allow init tasks to settle
 
         mockProvider.reset()
+        mockSyncer.reset() // Reset the syncer mock
         mockDelegate.reset()
 
         let expectedStatus: EntitlementStatus = .subscribed(expires: nil, isInGracePeriod: false)
@@ -411,22 +419,25 @@ final class PurchaseServiceTests: XCTestCase {
         await sut.restorePurchases()
 
         // ASSERT
+        // This is the new, more powerful assertion. We are directly checking
+        // that the service interacted with its dependency as expected.
+        XCTAssertEqual(mockSyncer.syncCallCount, 1, "AppStoreSyncer.sync() should have been called exactly once.")
+
+        // These assertions remain from the old test, and are still valid.
         XCTAssertEqual(mockProvider.checkCurrentEntitlementsCallCount, 1)
         XCTAssertEqual(sut.entitlementStatus, expectedStatus)
         XCTAssertNil(sut.lastFailure)
         XCTAssertEqual(sut.purchaseState, .idle)
 
+        // We can also verify the logging is now correct.
         XCTAssertTrue(mockDelegate.logEvents.contains(where: {
-            $0.message.contains("Skipping AppStore.sync() due to isUnitTesting=true") &&
-                $0.level == .debug &&
-                $0.context?["operation"] == "restorePurchases" // This operation is for the skipping log
-        }), "Delegate should log skipping AppStore.sync.")
+            $0.message.contains("Calling AppStoreSyncer.sync()") &&
+                $0.level == .debug
+        }), "Delegate should log the call to the syncer.")
 
-        XCTAssertTrue(mockDelegate.logEvents.contains(where: {
-            $0.message.contains("Restore purchases process completed.") && // Message might vary slightly
-            $0.level == .info &&
-                $0.context?["operation"] == "restorePurchases" // This operation is for the completion log
-        }), "Delegate should log successful restore completion.")
+        XCTAssertFalse(mockDelegate.logEvents.contains(where: {
+            $0.message.contains("Skipping AppStore.sync()")
+        }), "The 'Skipping' log should no longer appear.")
     }
 
     // MARK: - Get All Transactions / Subscription Details Tests
