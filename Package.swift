@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ASimplePurchaseKitProject",
+    name: "ASimplePurchaseKit",
     defaultLocalization: "en",
     platforms: [
         .iOS("16.4"),
