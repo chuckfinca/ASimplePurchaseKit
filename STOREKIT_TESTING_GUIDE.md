@@ -1,4 +1,4 @@
-# StoreKit Testing Guide for ASimplePurchaseKitProject
+# StoreKit Testing Guide for ASimplePurchaseKit
 
 This document outlines the strategy, known issues, and best practices for testing StoreKit interactions within the ASimplePurchaseKit project, especially when using Swift Package Manager (SPM).
 
@@ -7,7 +7,7 @@ This document outlines the strategy, known issues, and best practices for testin
 StoreKit testing in simulators, particularly for newer iOS versions (iOS 17.x, 18.x), can be unreliable due to bugs within Apple's StoreKit testing framework and simulator environment. Our test suite has been structured to identify and, where possible, work around these issues.
 
 **Key Achievements:**
-1.  **Reliable Resource Loading:** `.storekit` configuration files are correctly packaged into a nested resource bundle for the `PurchaseKitIntegrationTests` target (e.g., `ASimplePurchaseKitProject_PurchaseKitIntegrationTests.bundle`) and are loaded successfully from the root of this nested bundle in tests.
+1.  **Reliable Resource Loading:** `.storekit` configuration files are correctly packaged into a nested resource bundle for the `IntegrationTests` target (e.g., `ASimplePurchaseKit_IntegrationTests.bundle`) and are loaded successfully from the root of this nested bundle in tests.
 2.  **Diagnostic Suite:** `SPMStoreKitDiagnostics.swift` provides robust checks for bundle paths, resource loading, basic `SKTestSession` initialization, and JSON validation of `.storekit` files. It serves as the first point of debugging for environment-related StoreKit issues.
 3.  **Identification of Known Simulator Bugs:** Our tests can now correctly reach the point where known StoreKit simulator bugs manifest, and the test suite correctly fails or skips in response to these known issues.
 

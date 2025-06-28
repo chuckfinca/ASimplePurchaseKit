@@ -1,6 +1,6 @@
 //
 //  LiveSystemProviders.swift
-//  ASimplePurchaseKitProject
+//  ASimplePurchaseKit
 //
 //  Created by Charles Feinn on 6/27/25.
 //

@@ -131,11 +131,11 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     }
 
     private var nestedBundleName: String {
-        return "ASimplePurchaseKitProject_PurchaseKitIntegrationTests.bundle"
+        return "ASimplePurchaseKit_IntegrationTests.bundle"
     }
 
     private func getSPMTestResourceBundle(mainTestBundle: Bundle) -> Bundle? {
-        let baseBundleName = "ASimplePurchaseKitProject_PurchaseKitIntegrationTests"
+        let baseBundleName = "ASimplePurchaseKit_IntegrationTests"
         let nestedBundleNameWithExtension = baseBundleName + ".bundle"
 
         if let nestedBundleURL = mainTestBundle.url(forResource: baseBundleName, withExtension: "bundle") {

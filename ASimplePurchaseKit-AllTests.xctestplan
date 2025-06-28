@@ -6,7 +6,7 @@
       "options" : {
         "targetForVariableExpansion" : {
           "containerPath" : "container:",
-          "identifier" : "ASimplePurchaseKit",
+          "identifier" : "UnitTests",
           "name" : "ASimplePurchaseKit"
         }
       }
