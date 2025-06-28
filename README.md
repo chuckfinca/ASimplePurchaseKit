@@ -352,21 +352,20 @@ This approach, known as dependency injection, allows you to take full control ov
 ```swift
 import XCTest
 @testable import ASimplePurchaseKit // Use @testable to access internal types and mocks
-import StoreKit // For Product.ProductType, etc.
+import Combine
 
 @MainActor
 final class MyViewModelTests: XCTestCase {
 
     var purchaseService: PurchaseService!
     var mockProvider: MockPurchaseProvider!
-    // Mocks for system-level interactions
-    var mockListenerProvider: MockTransactionListenerProvider!
     var mockSyncer: MockAppStoreSyncer!
+    var cancellables: Set<AnyCancellable>!
 
     // Helper to set up the SUT with all mock dependencies
     func initializeSUT(productIDs: [String]) {
+        cancellables = []
         mockProvider = MockPurchaseProvider()
-        mockListenerProvider = MockTransactionListenerProvider()
         mockSyncer = MockAppStoreSyncer()
         
         purchaseService = PurchaseService(
@@ -375,50 +374,41 @@ final class MyViewModelTests: XCTestCase {
             purchaser: mockProvider,
             receiptValidator: mockProvider,
             // Inject the mock system providers
-            transactionListenerProvider: mockListenerProvider,
+            transactionListenerProvider: MockTransactionListenerProvider(), // Can be a plain instance if not used in test
             appStoreSyncer: mockSyncer,
             enableLogging: false
         )
     }
 
-    func test_purchase_succeeds_and_updates_entitlement_via_mock() async throws {
+    func test_restorePurchases_whenSuccessful_updatesEntitlement() async throws {
         // ARRANGE
-        let productID = "com.test.lifetime"
-        initializeSUT(productIDs: [productID])
+        initializeSUT(productIDs: ["com.test.product"])
         
-        let mockProduct = MockProduct.newNonConsumable(id: productID, displayName: "Lifetime Access")
-        
-        // 1. Configure mock provider for product fetching
-        mockProvider.productsResult = .success([mockProduct])
-        await purchaseService.fetchProducts()
-    
-        // Verify product is available
-        XCTAssertTrue(purchaseService.availableProducts.contains(where: { $0.id == productID }))
-    
-        // 2. To test the successful purchase path:
-        // Set up the mock to return a subscribed status when validation is requested.
-        // The purchase() method inside the SUT will fail early if it's given a MockProduct
-        // that doesn't have an underlying StoreKit.Product.
-        // So, for unit testing, we often test the component parts.
-        // Let's test that a successful restore updates the entitlement correctly.
-
-        let expectation = XCTestExpectation(description: "Entitlement status changes to active")
-        let cancellable = purchaseService.$entitlementStatus.dropFirst().sink { status in
-            if status.isActive {
-                expectation.fulfill()
+        let expectation = XCTestExpectation(description: "Entitlement status changes to active after restore")
+        let cancellable = purchaseService.$entitlementStatus
+            .dropFirst() // Ignore initial .unknown status
+            .sink { status in
+                if status.isActive {
+                    expectation.fulfill()
+                }
             }
-        }
-    
-        // ACT: Simulate a successful restore by configuring the mock and calling the method
+        
+        // ACT: Configure the mock providers to simulate a successful restore
+        // 1. The syncer will succeed
+        mockSyncer.syncShouldThrowError = nil 
+        // 2. The subsequent entitlement check will find a lifetime purchase
         mockProvider.entitlementResult = .success(.subscribed(expires: nil, isInGracePeriod: false))
+        
+        // 3. Call the method on the SUT
         await purchaseService.restorePurchases()
         
         // ASSERT
-        // Verify that the service called the app store syncer
-        XCTAssertEqual(mockSyncer.syncCallCount, 1)
-        // Verify that the entitlement was updated
         await fulfillment(of: [expectation], timeout: 1.0)
+        
+        XCTAssertEqual(mockSyncer.syncCallCount, 1, "AppStore.sync() should have been called once.")
+        XCTAssertEqual(mockProvider.checkCurrentEntitlementsCallCount, 1)
         XCTAssertTrue(purchaseService.entitlementStatus.isActive)
+        XCTAssertNil(purchaseService.lastFailure)
         
         cancellable.cancel()
     }
