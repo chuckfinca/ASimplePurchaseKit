@@ -7,9 +7,8 @@
 
 import XCTest
 import Combine
-import StoreKitTest // For SKTestSession, SKError
-@testable import ASimplePurchaseKit // For PurchaseService, ProductProtocol, etc.
-// Import StoreKit for Product.SubscriptionOffer.ID if directly used, but it's encapsulated.
+import StoreKitTest
+@testable import ASimplePurchaseKit
 
 @MainActor
 final class PurchaseServiceIntegrationTests: XCTestCase {
@@ -27,6 +26,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     // Product IDs from TestSubscriptionWithIntroOffer.storekit
     let trialProductIDAlpha = "com.asimplepurchasekit.sub.withtrial.alpha"
     let discountProductIDAlpha = "com.asimplepurchasekit.sub.withdiscount.alpha"
+    
     // Offer IDs from TestSubscriptionWithIntroOffer.storekit
     let freeTrialOfferIDAlpha = "free_trial_7_days_offer_a"
     let discountOfferIDAlpha = "pay_upfront_1_month_offer_a"
@@ -79,7 +79,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             print("⚠️ [SETUP] Direct product check (Product.products(for:)) failed: \(error) using Products.storekit")
         }
 
-        config = PurchaseConfig(productIDs: allTestProductIDs, enableLogging: true) // Enable logging
+        config = PurchaseConfig(productIDs: allTestProductIDs, enableLogging: true)
         sut = PurchaseService(config: config)
         cancellables = []
         print("🧪 [SETUP] PurchaseService (SUT for Products.storekit) initialized.")
@@ -277,7 +277,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             storeKitFilename: "TestLifetimeOnly.storekit",
             productIDsForConfig: [lifetimeProductID]
         )
-        var localCancellables = cancellables
+        let localCancellables = cancellables
         defer {
             localCancellables.forEach { $0.cancel() }
             // Since session is local to setupSUTWithStoreKitFile, we don't clear it here.
@@ -295,7 +295,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             storeKitFilename: "TestSubscriptionOnly.storekit",
             productIDsForConfig: subscriptionProductIDs
         )
-        var localCancellables = cancellables; defer { localCancellables.forEach { $0.cancel() } }
+        let localCancellables = cancellables; defer { localCancellables.forEach { $0.cancel() } }
 
         if sut.availableProducts.count != subscriptionProductIDs.count {
             print("⚠️ WARNING (P1): Expected \(subscriptionProductIDs.count) subscription products from TestSubscriptionOnly.storekit, but found \(sut.availableProducts.count). This is likely due to StoreKit simulator bug P1 (iOS 17+).")
@@ -363,7 +363,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         if let lastFailure = sut.lastFailure {
             // Handle P2 (unknown errors during purchase)
             if case .underlyingError(let underlying) = lastFailure.error, let skError = underlying as? SKError, skError.code == .unknown {
-                XCTSkip("Skipping direct nil error check due to P2 (StoreKit unknown error during purchase). Error: \(lastFailure.error.localizedDescription)")
+                throw XCTSkip("Skipping direct nil error check due to P2 (StoreKit unknown error during purchase). Error: \(lastFailure.error.localizedDescription)")
             } else {
                 XCTFail("Purchase with offer should not result in an error: \(lastFailure.error.localizedDescription) (Operation: \(lastFailure.operation))")
             }
@@ -371,7 +371,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         var hasTransactions = false
         // Use the local session specific to this test setup
-        if !(try! session.allTransactions()).isEmpty { // Added try! for brevity in test, handle error if needed
+        if !(session.allTransactions()).isEmpty {
             hasTransactions = true
         }
         // Use the known storeKitFilename for logging
@@ -383,7 +383,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     func test_getSubscriptionDetails_afterPurchase() async throws {
         let subscriptionProductIDs = [monthlyProductID, yearlyProductID]
         // `session` here is the local session from setupSUTWithStoreKitFile
-        let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
+        let (sut, _, cancellables) = try await setupSUTWithStoreKitFile(
             storeKitFilename: "TestSubscriptionOnly.storekit",
             productIDsForConfig: subscriptionProductIDs
         )
@@ -420,16 +420,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
                 renewalInfoWillAutoRenewString = "\(String(describing: renewalInfoPayload.willAutoRenew)) (Unverified)"
             }
 
-
-            // CORRECTED print statement:
-            // `details.state` is correct.
-            // For `willAutoRenew`, we access it from the unwrapped `renewalInfo` payload.
             print("ℹ️ Subscription details for \(monthlyProductID): Overall State - \(details.state), WillAutoRenew - \(renewalInfoWillAutoRenewString)")
 
             XCTAssertEqual(details.state, .subscribed, "Subscription state should be .subscribed. Actual: \(details.state)")
 
-            // Optionally, assert on willAutoRenew if you can control it in the .storekit file or test session
-            // For example, if newly purchased subscriptions default to auto-renewing:
             if case .verified(let renewalInfoPayload) = details.renewalInfo {
                 XCTAssertTrue(renewalInfoPayload.willAutoRenew, "Newly purchased subscription should typically be set to auto-renew.")
             }
@@ -448,9 +442,6 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         XCTAssertTrue(canPay, "SKPaymentQueue.canMakePayments() usually returns true in test environments.")
     }
 
-
-    // Existing tests like test_purchaseMonthlySubscription_withSubscriptionOnlyStoreKitFile (original version)
-    // should now call sut.purchase(productID: monthlyProductID, offerID: nil)
     func test_purchaseMonthlySubscription_withSubscriptionOnlyStoreKitFile() async throws {
         let subscriptionProductIDs = [monthlyProductID, yearlyProductID]
         let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
@@ -476,7 +467,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         }.store(in: &localCancellables)
 
         print("🧪 Attempting to purchase \(monthlyProductID) using TestSubscriptionOnly.storekit...")
-        await sut.purchase(productID: monthlyProductID, offerID: nil) // MODIFIED to use new API
+        await sut.purchase(productID: monthlyProductID, offerID: nil)
 
         await fulfillment(of: [expectation], timeout: 10.0)
 
@@ -489,7 +480,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         if let lastFailure = sut.lastFailure {
             if case .underlyingError(let underlying) = lastFailure.error, let skError = underlying as? SKError, skError.code == .unknown {
-                XCTSkip("Skipping direct nil error check due to P2 (StoreKit unknown error during purchase). Error: \(lastFailure.error.localizedDescription)")
+                throw XCTSkip("Skipping direct nil error check due to P2 (StoreKit unknown error during purchase). Error: \(lastFailure.error.localizedDescription)")
             } else {
                 XCTFail("Purchase should not result in an error: \(lastFailure.error.localizedDescription) (Operation: \(lastFailure.operation))")
             }
@@ -499,7 +490,6 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         if !session.allTransactions().isEmpty { hasTransactions = true }
         XCTAssertTrue(hasTransactions, "SKTestSession should have at least one transaction after purchase.")
     }
-
 
     func test_nonConsumable_fullFlow_usingLifetimeOnlyFile() async throws {
         let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
@@ -546,7 +536,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         if let lastFailure = sut.lastFailure {
             if case .underlyingError(let underlying) = lastFailure.error, let skError = underlying as? SKError, skError.code == .unknown {
-                XCTSkip("Skipping direct nil error check due to P2 (StoreKit unknown error during purchase). Error: \(lastFailure.error.localizedDescription)")
+                throw XCTSkip("Skipping direct nil error check due to P2 (StoreKit unknown error during purchase). Error: \(lastFailure.error.localizedDescription)")
             } else {
                 XCTFail("Purchase should be successful. Error: \(lastFailure.error.localizedDescription) (Op: \(lastFailure.operation))")
             }
@@ -584,15 +574,15 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             storeKitFilename: "TestLifetimeOnly.storekit",
             productIDsForConfig: [lifetimeProductID]
         )
-        var activeCancelCancellables = cancelCancellablesSetup; defer { activeCancelCancellables.forEach { $0.cancel() } }
+        let activeCancelCancellables = cancelCancellablesSetup; defer { activeCancelCancellables.forEach { $0.cancel() } }
 
         await sutCancel.updateEntitlementStatus()
         XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active for cancellation test setup.")
 
         cancelSession.failTransactionsEnabled = true
-        cancelSession.failureError = .paymentCancelled // SKError.paymentCancelled
+        cancelSession.failureError = .paymentCancelled
 
-        await sutCancel.purchase(productID: lifetimeProductID, offerID: nil) // MODIFIED
+        await sutCancel.purchase(productID: lifetimeProductID, offerID: nil)
 
         // P6: SKTestSession.failureError = .paymentCancelled results in .unknown underlying error
         // PurchaseService now catches SKError.paymentCancelled and maps it to PurchaseError.purchaseCancelled
@@ -606,15 +596,13 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             let skError = underlyingError as? SKError, skError.code == .unknown {
             print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.underlyingError(SKError.unknown)`. This indicates the StoreKit test bug P6 is active, where the raw SKError bubbles up instead of PurchaseResult.userCancelled.")
             XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active after P6-affected cancelled purchase.")
-            XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug. SUT reported SKError.unknown.")
+            throw XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug. SUT reported SKError.unknown.")
         } else {
             XCTFail("Expected .purchaseCancelled or P6-related .underlyingError(SKError.unknown), but got \(String(describing: sutCancel.lastFailure?.error)). Entitlement: \(sutCancel.entitlementStatus)")
         }
         cancelSession.failTransactionsEnabled = false
     }
 
-    // This test relies on the scheme's StoreKit config if session is not used, or session if used.
-    // The test name implies it uses SKTestSession, so it should use the one from setUp or a local one.
     func test_skTestSession_canFetchProducts() async throws {
         // This test uses the `session` from `setUp()`, which is configured with "Products.storekit"
         try XCTSkipIf(session == nil, "SKTestSession from setUp was not initialized.")
@@ -681,7 +669,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             String(describing: underlyingError) == String(describing: StoreKitError.unknown) { // Check if it's specifically StoreKitError.unknown
             print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.underlyingError(StoreKitError.unknown)`. This indicates the StoreKit test bug P6 is active...")
             XCTAssertFalse(self.sut.entitlementStatus.isActive, "Entitlement should not be active after P6-affected cancelled purchase.")
-            XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug. SUT reported StoreKitError.unknown.")
+            throw XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug. SUT reported StoreKitError.unknown.")
         } else {
             XCTFail("Expected .purchaseCancelled or P6-related .underlyingError(StoreKitError.unknown), but got \(String(describing: self.sut.lastFailure?.error)). Entitlement: \(self.sut.entitlementStatus)")
         }

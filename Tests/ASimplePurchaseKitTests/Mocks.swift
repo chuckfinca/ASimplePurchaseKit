@@ -10,11 +10,11 @@ import XCTest
 import StoreKit
 @testable import ASimplePurchaseKit // Use @testable to access internal types
 
-// MARK: - Mock Product Implementations (NEW)
+// MARK: - Mock Product Implementations
 
 public struct MockPromotionalOffer: PromotionalOfferProtocol, Hashable, Sendable {
     public var id: String?
-    public var displayName: String // Ensure this is a valid String, e.g., "7-day free trial"
+    public var displayName: String
     public var price: Decimal
     public var paymentMode: Product.SubscriptionOffer.PaymentMode
     public var period: Product.SubscriptionPeriod
@@ -93,7 +93,7 @@ public struct MockProduct: ProductProtocol, Hashable, Sendable {
     }
 
     // Helper to create a mock auto-renewable product
-    public static func newAutoRenewable(id: String, displayName: String = "Mock Subscription", groupID: String = "group1", period: Product.SubscriptionPeriod = .monthly, promotionalOffers: [PromotionalOfferProtocol] = []) -> MockProduct { // ADDED promotionalOffers
+    public static func newAutoRenewable(id: String, displayName: String = "Mock Subscription", groupID: String = "group1", period: Product.SubscriptionPeriod = .monthly, promotionalOffers: [PromotionalOfferProtocol] = []) -> MockProduct {
         MockProduct(id: id,
                     type: .autoRenewable,
                     displayName: displayName,
@@ -109,12 +109,10 @@ public struct MockProduct: ProductProtocol, Hashable, Sendable {
 
 @MainActor
 class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
-
-    // ... (rest of MockPurchaseProvider remains the same) ...
     // MARK: - Controllable Test Properties
 
     // Controls what fetchProducts() returns
-    var productsResult: Result<[ProductProtocol], Error> = .success([]) // Changed to ProductProtocol
+    var productsResult: Result<[any ProductProtocol], Error> = .success([])
 
     // Controls what purchase() returns
     var purchaseResult: Result<Transaction, Error> = .failure(PurchaseError.unknown)
@@ -125,12 +123,11 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
     // Controls what getAllTransactions() returns
     var allTransactionsResult: Result<[Transaction], Error> = .success([])
 
-
     // MARK: - Call Counts and Captured Values for Assertions
 
     var fetchProductsCallCount = 0
     var purchaseCallCount = 0
-    var lastOfferIdentifierPurchased: String? // NEW: To capture offer ID
+    var lastOfferIdentifierPurchased: String?
     var validateCallCount = 0
     var checkCurrentEntitlementsCallCount = 0
     var getAllTransactionsCallCount = 0
@@ -138,14 +135,14 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
 
     // MARK: - Protocol Implementations
 
-    func fetchProducts(for ids: [String]) async throws -> [ProductProtocol] { // Changed
+    func fetchProducts(for ids: [String]) async throws -> [any ProductProtocol] {
         fetchProductsCallCount += 1
         return try productsResult.get()
     }
 
-    func purchase(_ product: Product, offerIdentifier: String?) async throws -> Transaction { // MODIFIED
+    func purchase(_ product: Product, offerIdentifier: String?) async throws -> Transaction {
         purchaseCallCount += 1
-        lastOfferIdentifierPurchased = offerIdentifier // CAPTURE
+        lastOfferIdentifierPurchased = offerIdentifier
         return try purchaseResult.get()
     }
 
@@ -159,7 +156,7 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
         return try entitlementResult.get()
     }
 
-    func getAllTransactions() async throws -> [Transaction] { // NEW
+    func getAllTransactions() async throws -> [Transaction] {
         getAllTransactionsCallCount += 1
         return try allTransactionsResult.get()
     }
@@ -174,7 +171,7 @@ class MockPurchaseProvider: ProductProvider, Purchaser, ReceiptValidator {
 
         fetchProductsCallCount = 0
         purchaseCallCount = 0
-        lastOfferIdentifierPurchased = nil // RESET
+        lastOfferIdentifierPurchased = nil
         validateCallCount = 0
         checkCurrentEntitlementsCallCount = 0
         getAllTransactionsCallCount = 0
@@ -189,9 +186,9 @@ extension Transaction {
                          productType: Product.ProductType = .autoRenewable,
                          expiresDate: Date? = Calendar.current.date(byAdding: .month, value: 1, to: Date()),
                          originalID: UInt64 = UInt64.random(in: 1000...9999),
-                         promotionalOfferID: String? = nil, // NEW conceptual field
-                         subscriptionStatusProvider: (() async -> Product.SubscriptionInfo.Status?)? = nil // NEW For mocking status
-                        ) throws -> Transaction {
+                         promotionalOfferID: String? = nil,
+                         subscriptionStatusProvider: (() async -> Product.SubscriptionInfo.Status?)? = nil
+    ) throws -> Transaction {
         print("⚠️ Transaction.makeMock is a conceptual placeholder. Real Transaction instances are hard to mock fully.")
         // To truly mock Transaction for testing getSubscriptionDetails, we'd need to mock its async `subscriptionStatus` property.
         // This is non-trivial. The current Transaction.makeMock will still throw.
@@ -202,10 +199,11 @@ extension Transaction {
     }
 }
 
-// MARK: - New Mock System Service Providers
+// MARK: - Mock System Service Providers
 
 @MainActor
 class MockTransactionListenerProvider: TransactionListenerProvider {
+    
     // We can capture the handler to manually trigger it in tests
     var updateHandler: ((VerificationResult<Transaction>) async -> Void)?
     var listenForTransactionsCallCount = 0
@@ -216,7 +214,7 @@ class MockTransactionListenerProvider: TransactionListenerProvider {
         // Return a dummy task that does nothing, but can be cancelled.
         return Task { /* Do nothing */ }
     }
-    
+
     // Helper for tests to simulate a transaction update
     func triggerTransactionUpdate(_ result: VerificationResult<Transaction>) async {
         await updateHandler?(result)

@@ -316,13 +316,12 @@ public class PurchaseService: ObservableObject {
             case .verified(let renewalInfoPayload):
                 logParts.append("WillAutoRenewNextPeriod: \(renewalInfoPayload.willAutoRenew)")
                 logParts.append("NextRenewalAttemptDate: \(String(describing: renewalInfoPayload.renewalDate))")
-                // Add other known-to-exist and simple properties from renewalInfoPayload if desired for logging
-                // For example: renewalInfoPayload.originalTransactionID, renewalInfoPayload.productID
-                // Avoid properties that your Xcode 16.4 compiler flags as missing.
+
+                // Avoid properties that Xcode 16.4 compiler flags as missing.
                 if let futureOfferID = renewalInfoPayload.offerID {
                     logParts.append("NextRenewalOfferID: \(futureOfferID)")
                 }
-                if let autoRenewPref = renewalInfoPayload.autoRenewPreference { // This seemed to be okay
+                if let autoRenewPref = renewalInfoPayload.autoRenewPreference {
                     logParts.append("AutoRenewPreferenceProductID: \(autoRenewPref)")
                 }
 

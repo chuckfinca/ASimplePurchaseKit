@@ -8,7 +8,7 @@
 import Foundation
 import StoreKit
 
-// MARK: - Product-related Protocols (NEW)
+// MARK: - Product-related Protocols
 
 public protocol PromotionalOfferProtocol: Sendable {
     var id: String? { get } // StoreKit.Product.SubscriptionOffer.id (iOS 17.4+)

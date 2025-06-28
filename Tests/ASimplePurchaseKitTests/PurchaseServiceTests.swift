@@ -1,3 +1,10 @@
+//
+//  PurchaseServiceTests.swift
+//  ASimplePurchaseKit
+//
+//  Created by Charles Feinn on 6/10/25.
+//
+
 import XCTest
 import Combine
 import StoreKit
@@ -57,7 +64,8 @@ final class PurchaseServiceTests: XCTestCase {
     // The test for `purchase_withMockProductMissingUnderlyingStoreKitProduct_failsAsExpected`
     // already covers the scenario where `underlyingStoreKitProduct` is nil.
     // For successful purchase tests, we rely on `mockProvider.purchaseResult`.
-    private func makeMockProductWithUnderlying(id: String, type: Product.ProductType, offers: [PromotionalOfferProtocol] = []) -> ProductProtocol {
+    private func makeMockProductWithUnderlying(id: String, type: Product.ProductType, offers: [PromotionalOfferProtocol] = []) -> any ProductProtocol {
+
         // This is a simplified MockProduct that *conceptually* has an underlying product.
         // In reality, `underlyingStoreKitProduct` for `MockProduct` is nil.
         // PurchaseService tests for successful purchase rely on availableProducts containing
@@ -69,8 +77,8 @@ final class PurchaseServiceTests: XCTestCase {
         }
     }
 
-
     // MARK: - Initialization Tests
+
     func test_initialization_fetchesProductsAndUpdatesEntitlements_setsInitialState() async {
         // ARRANGE
         let initialProductIDs = ["com.example.init.failure1", "com.example.init.failure2"]
@@ -125,7 +133,7 @@ final class PurchaseServiceTests: XCTestCase {
         mockDelegate.reset() // Reset after init logs
 
         let mockProduct = MockProduct.newNonConsumable(id: mockLifetimeProductID)
-        let expectedProducts: [ProductProtocol] = [mockProduct]
+        let expectedProducts: [any ProductProtocol] = [mockProduct]
         mockProvider.productsResult = .success(expectedProducts)
 
         let stateExpectation = XCTestExpectation(description: "PurchaseState changes to fetchingProducts then idle")
@@ -144,7 +152,6 @@ final class PurchaseServiceTests: XCTestCase {
         // ACT
         await sut.fetchProducts()
         await fulfillment(of: [stateExpectation], timeout: 2.0)
-
 
         // ASSERT
         XCTAssertEqual(mockProvider.fetchProductsCallCount, 1)
@@ -282,8 +289,8 @@ final class PurchaseServiceTests: XCTestCase {
         mockProvider.productsResult = .success([mockPureProduct])
         await sut.fetchProducts() // This will populate sut.availableProducts
 
-        await Task.yield() // Allow fetch to complete
-        mockProvider.reset() // Reset call counts for purchase
+        await Task.yield()
+        mockProvider.reset()
         mockDelegate.reset()
 
         // ACT
@@ -409,7 +416,7 @@ final class PurchaseServiceTests: XCTestCase {
         await Task.yield() // Allow init tasks to settle
 
         mockProvider.reset()
-        mockSyncer.reset() // Reset the syncer mock
+        mockSyncer.reset()
         mockDelegate.reset()
 
         let expectedStatus: EntitlementStatus = .subscribed(expires: nil, isInGracePeriod: false)
@@ -441,6 +448,7 @@ final class PurchaseServiceTests: XCTestCase {
     }
 
     // MARK: - Get All Transactions / Subscription Details Tests
+
     func test_getAllTransactions_success_returnsTransactions() async {
         // ARRANGE
         initializeSUT(enableLogging: true)
@@ -456,7 +464,6 @@ final class PurchaseServiceTests: XCTestCase {
 
         mockProvider.reset() // Reset after init
         mockDelegate.reset()
-
 
         // ACT
         let transactions = await sut.getAllTransactions()
@@ -499,7 +506,6 @@ final class PurchaseServiceTests: XCTestCase {
         }), "Delegate should log failed getAllTransactions.")
     }
 
-    // NEW TEST for getSubscriptionDetails
     // This test is limited because mocking Transaction.subscriptionStatus is hard.
     // It primarily tests the filtering logic and handling of empty/error states.
     func test_getSubscriptionDetails_noTransactionsFound_returnsNil() async {
@@ -540,8 +546,9 @@ final class PurchaseServiceTests: XCTestCase {
 
 
     // MARK: - canMakePayments Test
+
     // This is a basic test. SKPaymentQueue.canMakePayments() is a static method from StoreKit.
-    // Deep mocking would require more advanced techniques beyond the scope of typical unit tests for this library.
+    // Deep mocking would require more advanced techniques.
     func test_canMakePayments_returnsValueAndLogs() {
         initializeSUT(enableLogging: true)
         mockDelegate.reset()
@@ -598,7 +605,6 @@ final class PurchaseServiceTests: XCTestCase {
         let purchaseErrorUnderlying2 = PurchaseError.underlyingError(nsErrorContent2)
         let purchaseErrorUnderlying3 = PurchaseError.underlyingError(nsErrorContent3)
         let purchaseErrorUnderlying4 = PurchaseError.underlyingError(nsErrorContent4)
-
 
         XCTAssertEqual(purchaseErrorUnderlying1, purchaseErrorUnderlying2, "Underlying errors with same NSError domain/code should be equal.")
         XCTAssertNotEqual(purchaseErrorUnderlying1, purchaseErrorUnderlying3, "Underlying errors with different NSError content should not be equal.")
@@ -664,7 +670,6 @@ final class PurchaseServiceTests: XCTestCase {
     }
 }
 
-// Mock Delegate (already exists from previous phase, ensure it's up-to-date)
 class MockPurchaseServiceDelegate: PurchaseServiceDelegate, @unchecked Sendable {
     struct LogEvent: @unchecked Sendable {
         let message: String
