@@ -1,5 +1,5 @@
 //
-//  PurchaseState.swift
+//  PurchaseService.swift
 //  ASimplePurchaseKit
 //
 //  Created by Charles Feinn.
@@ -9,23 +9,92 @@ import Foundation
 import StoreKit
 import Combine
 
+/// An enumeration representing the current operational state of the `PurchaseService`.
+///
+/// Use this to update your UI with activity indicators or to disable buttons during
+/// long-running operations.
+///
+/// ## Usage
+/// ```swift
+/// switch purchaseService.purchaseState {
+/// case .purchasing(let productID):
+///     ProgressView("Purchasing \(productID)...")
+/// case .restoring:
+///     ProgressView("Restoring purchases...")
+/// default:
+///     Button("Buy Now") { /* ... */ }
+/// }
+/// ```
 public enum PurchaseState: Equatable, Sendable {
+    /// The service is not performing any operations.
     case idle
+    /// The service is currently fetching product information from the App Store.
     case fetchingProducts
+    /// The service is processing a purchase for a specific product.
     case purchasing(productID: String)
+    /// The service is restoring previously purchased transactions.
     case restoring
+    /// The service is checking the user's current entitlement status.
     case checkingEntitlement
 }
 
+/// An observable service that manages in-app purchases and user entitlements using StoreKit 2.
+///
+/// This is the main entry point for interacting with the ASimplePurchaseKit library.
+/// It simplifies fetching products, making purchases, restoring transactions, and checking entitlement status.
+///
+/// ## Usage
+/// ```swift
+/// @main
+/// struct YourApp: App {
+///     @StateObject private var purchaseService: PurchaseService
+///
+///     init() {
+///         let config = PurchaseConfig(productIDs: ["com.myapp.pro.monthly"])
+///         _purchaseService = StateObject(wrappedValue: PurchaseService(config: config))
+///     }
+///
+///     var body: some Scene {
+///         WindowGroup {
+///             ContentView()
+///                 .environmentObject(purchaseService)
+///         }
+///     }
+/// }
+/// ```
 @MainActor
 public class PurchaseService: ObservableObject {
 
     // MARK: - Published State
 
+    /// The list of products that are available for purchase, conforming to `ProductProtocol`.
+    ///
+    /// This array is populated by calling `fetchProducts()` and can be used to build your paywall UI.
+    /// It will be empty until the initial fetch is complete.
     @Published public internal(set) var availableProducts: [any ProductProtocol] = []
+    
+    /// The user's current entitlement status.
+    ///
+    /// Observe this property in your UI to grant or deny access to premium features.
+    /// Use the `.isActive` computed property for a simple boolean check.
     @Published public internal(set) var entitlementStatus: EntitlementStatus = .unknown
+    
+    /// The current state of the purchase service, indicating if it's idle or performing an operation.
+    ///
+    /// Use this to show activity indicators or disable UI elements during operations like
+    /// `.fetchingProducts`, `.purchasing`, or `.restoring`.
     @Published public internal(set) var purchaseState: PurchaseState = .idle
+    
+    /// The last failure that occurred, containing the error and operational context.
+    ///
+    /// This is set to `nil` at the start of a new operation. Check this property to display
+    /// relevant error messages to the user.
     @Published public private(set) var lastFailure: PurchaseFailure?
+    
+    /// A delegate to receive logging and other service events.
+    ///
+    /// Assign a delegate to this property to pipe logs and metrics into your own analytics system.
+    public weak var delegate: PurchaseServiceDelegate?
 
     // MARK: - Dependencies
 
@@ -34,7 +103,6 @@ public class PurchaseService: ObservableObject {
     private let receiptValidator: ReceiptValidator
     private let transactionListenerProvider: TransactionListenerProvider
     private let appStoreSyncer: AppStoreSyncer
-    public weak var delegate: PurchaseServiceDelegate?
 
     // MARK: - Private State
 
@@ -45,6 +113,11 @@ public class PurchaseService: ObservableObject {
 
     // MARK: - Initialization
 
+    /// Creates an instance of the purchase service with the given configuration.
+    ///
+    /// This is the primary initializer you should use in your app.
+    ///
+    /// - Parameter config: The `PurchaseConfig` struct containing product IDs and logging options.
     public convenience init(config: PurchaseConfig) {
         let liveProvider = LivePurchaseProvider()
         let liveListenerProvider = LiveTransactionListenerProvider()
@@ -138,6 +211,11 @@ public class PurchaseService: ObservableObject {
 
     // MARK: - Public API - Product Fetching
 
+    /// Fetches product information from the App Store.
+    ///
+    /// This method fetches product details for the `productIDs` provided during initialization.
+    /// It updates the `availableProducts` property upon completion.
+    /// The `purchaseState` will be set to `.fetchingProducts` during the operation.
     public func fetchProducts() async {
         let currentOperation = "fetchProducts"
         guard purchaseState != .fetchingProducts else {
@@ -149,16 +227,12 @@ public class PurchaseService: ObservableObject {
         log(.info, "Fetching products for IDs: \(productIDs.joined(separator: ", ")).", operation: currentOperation)
 
         do {
-            // The provider still returns adapters conforming to ProductProtocol
             let fetchedProducts: [any ProductProtocol] = try await productProvider.fetchProducts(for: productIDs)
 
-            // Update the public-facing products
             self.availableProducts = fetchedProducts
 
-            // Populate the internal lookup dictionary
             self.storeKitProducts.removeAll()
             for product in fetchedProducts {
-                // Attempt to get the real StoreKit product from the adapter
                 if let adapter = product as? StoreKitProductAdapter {
                     self.storeKitProducts[adapter.id] = adapter.underlyingStoreKitProduct
                 }
@@ -185,6 +259,15 @@ public class PurchaseService: ObservableObject {
 
     // MARK: - Public API - Purchasing
 
+    /// Initiates the purchase flow for a given product identifier.
+    ///
+    /// The product must have been previously fetched and be present in `availableProducts`.
+    /// The service's `purchaseState` will be updated to `.purchasing(productID)` during the flow.
+    /// Upon completion, `entitlementStatus` will be updated and `lastFailure` will be set if an error occurred.
+    ///
+    /// - Parameters:
+    ///   - productID: The string identifier of the product to purchase.
+    ///   - offerID: An optional identifier for a specific promotional offer. Required for purchasing promotional offers.
     public func purchase(productID: String, offerID: String? = nil) async {
         let currentOperation = "purchase"
         let logProductID = productID
@@ -243,6 +326,10 @@ public class PurchaseService: ObservableObject {
         setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
     }
 
+    /// Returns the promotional offers available for a given subscription product.
+    ///
+    /// - Parameter product: The subscription product for which to retrieve offers.
+    /// - Returns: An array of `PromotionalOfferProtocol` objects. Returns an empty array if the product is not a subscription or has no offers.
     public func eligiblePromotionalOffers(for product: any ProductProtocol) -> [PromotionalOfferProtocol] {
         let currentOperation = "eligiblePromotionalOffers"
         guard product.type == .autoRenewable, let subInfo = product.subscription else {
@@ -256,6 +343,12 @@ public class PurchaseService: ObservableObject {
 
     // MARK: - Public API - Transactions & Entitlement
 
+    /// Retrieves the user's complete, verified transaction history.
+    ///
+    /// This method fetches all of the user's past transactions from the App Store.
+    /// It can be used for building a receipt history view or for auditing purposes.
+    ///
+    /// - Returns: An array of verified `Transaction` objects. Returns an empty array if an error occurs.
     public func getAllTransactions() async -> [Transaction] {
         let currentOperation = "getAllTransactions"
         log(.info, "Attempting to get all transactions.", operation: currentOperation)
@@ -273,6 +366,14 @@ public class PurchaseService: ObservableObject {
         return []
     }
 
+    /// Retrieves detailed status information for a specific auto-renewable subscription.
+    ///
+    /// This method searches through all user transactions to find the latest one
+    /// for the given product ID and returns its `Product.SubscriptionInfo.Status`.
+    /// This is useful for checking expiration dates, renewal status, and more.
+    ///
+    /// - Parameter productID: The product identifier of the auto-renewable subscription.
+    /// - Returns: A `Product.SubscriptionInfo.Status` object if a valid transaction is found, otherwise `nil`.
     public func getSubscriptionDetails(for productID: String) async -> Product.SubscriptionInfo.Status? {
         let currentOperation = "getSubscriptionDetails"
         log(.info, "Attempting to get subscription details for productID: \(productID)", productID: productID, operation: currentOperation)
@@ -289,42 +390,23 @@ public class PurchaseService: ObservableObject {
                 return nil
             }
 
-            // `latestTransactionForProductID.subscriptionStatus` returns `Product.SubscriptionInfo.Status?`
             guard let status = await latestTransactionForProductID.subscriptionStatus else {
                 log(.warning, "Could not retrieve Product.SubscriptionInfo.Status from latest transaction (\(latestTransactionForProductID.id)) for productID: \(productID).", productID: productID, operation: currentOperation)
                 return nil
             }
 
-            // Log essential and reliably available information
             var logParts: [String] = []
-            logParts.append("OverallState: \(status.state)") // This is Product.SubscriptionInfo.RenewalState
-
-            // Expiration date of the current subscription period (from the transaction in the status)
+            logParts.append("OverallState: \(status.state)")
             switch status.transaction {
             case .verified(let transactionPayload):
-                if let expDate = transactionPayload.expirationDate {
-                    logParts.append("CurrentPeriodExpires: \(expDate)")
-                } else {
-                    logParts.append("CurrentPeriodExpires: None")
-                }
+                if let expDate = transactionPayload.expirationDate { logParts.append("CurrentPeriodExpires: \(expDate)") }
             case .unverified(_, let error):
                 logParts.append("CurrentPeriodExpires: UnverifiedTxInStatus(\(error.localizedDescription))")
             }
 
-            // Information from RenewalInfo (next renewal period)
             switch status.renewalInfo {
             case .verified(let renewalInfoPayload):
                 logParts.append("WillAutoRenewNextPeriod: \(renewalInfoPayload.willAutoRenew)")
-                logParts.append("NextRenewalAttemptDate: \(String(describing: renewalInfoPayload.renewalDate))")
-
-                // Avoid properties that Xcode 16.4 compiler flags as missing.
-                if let futureOfferID = renewalInfoPayload.offerID {
-                    logParts.append("NextRenewalOfferID: \(futureOfferID)")
-                }
-                if let autoRenewPref = renewalInfoPayload.autoRenewPreference {
-                    logParts.append("AutoRenewPreferenceProductID: \(autoRenewPref)")
-                }
-
             case .unverified(_, let error):
                 logParts.append("RenewalInfo: Unverified(\(error.localizedDescription))")
             }
@@ -341,6 +423,11 @@ public class PurchaseService: ObservableObject {
         }
     }
 
+    /// Restores previously completed purchases.
+    ///
+    /// This method syncs with the App Store to restore non-consumable products and
+    /// active subscriptions. The `entitlementStatus` will be updated automatically.
+    /// The `purchaseState` will be set to `.restoring` during the operation.
     public func restorePurchases() async {
         let currentOperation = "restorePurchases"
         guard purchaseState != .restoring else {
@@ -370,17 +457,28 @@ public class PurchaseService: ObservableObject {
         }
     }
 
+    /// Manually triggers an update of the user's entitlement status.
+    ///
+    /// This method forces a re-check of the user's current entitlements with the App Store.
+    /// It's useful for scenarios where you need to be certain you have the latest status.
     public func updateEntitlementStatus() async {
         self.lastFailure = nil
         await _updateEntitlementStatusInternal(operation: "updateEntitlementStatus_explicit")
     }
 
+    /// Checks if the user is allowed to make payments.
+    ///
+    /// This method returns `false` if the user is restricted from authorizing payments
+    /// (e.g., due to parental controls).
+    /// - Returns: `true` if the user can make payments, `false` otherwise.
     public func canMakePayments() -> Bool {
         let currentOperation = "canMakePayments"
         let canPay = SKPaymentQueue.canMakePayments()
         log(.info, "canMakePayments check result: \(canPay)", operation: currentOperation)
         return canPay
     }
+
+    // MARK: - Private Helpers
 
     private func _updateEntitlementStatusInternal(operation contextOperation: String) async {
         if contextOperation == "updateEntitlementStatus_explicit" && purchaseState == .checkingEntitlement {
@@ -414,7 +512,6 @@ public class PurchaseService: ObservableObject {
         }
     }
 
-    // MARK: - Private Helpers
     private func setPurchaseState(_ newState: PurchaseState, operation: String, productID: String? = nil) {
         if self.purchaseState != newState {
             log(.debug, "PurchaseState changed: \(self.purchaseState) -> \(newState) (Op: \(operation))", productID: productID, operation: operation)

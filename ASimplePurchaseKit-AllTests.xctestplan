@@ -1,10 +1,14 @@
 {
   "configurations" : [
     {
-      "id" : "1466977C-CA83-4654-AC4F-0AE5666F814E",
-      "name" : "Test Scheme Action",
+      "id" : "AF48E210-467B-46A1-A491-47072BF5ABC9",
+      "name" : "Configuration 1",
       "options" : {
-
+        "targetForVariableExpansion" : {
+          "containerPath" : "container:",
+          "identifier" : "ASimplePurchaseKit",
+          "name" : "ASimplePurchaseKit"
+        }
       }
     }
   ],
@@ -15,15 +19,15 @@
     {
       "target" : {
         "containerPath" : "container:",
-        "identifier" : "PurchaseKitIntegrationTests",
-        "name" : "PurchaseKitIntegrationTests"
+        "identifier" : "IntegrationTests",
+        "name" : "IntegrationTests"
       }
     },
     {
       "target" : {
         "containerPath" : "container:",
-        "identifier" : "ASimplePurchaseKitTests",
-        "name" : "ASimplePurchaseKitTests"
+        "identifier" : "UnitTests",
+        "name" : "UnitTests"
       }
     }
   ],

@@ -345,7 +345,7 @@ class MyAppPurchaseDelegate: PurchaseServiceDelegate, @unchecked Sendable { // E
 
 ## 🧪 Testing
 
-The library is designed to be easily testable. You can initialize `PurchaseService` with mock providers (available in the `ASimplePurchaseKitTests` target if you import it as `@testable`) to simulate any StoreKit scenario without needing the network or a `.storekit` file for your *unit tests*.
+The library is designed to be easily testable. You can initialize `PurchaseService` with mock providers (available in the `UnitTests` target if you import it as `@testable`) to simulate any StoreKit scenario without needing the network or a `.storekit` file for your *unit tests*.
 
 This approach, known as dependency injection, allows you to take full control over the service's external interactions.
 

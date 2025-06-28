@@ -28,18 +28,18 @@ let package = Package(
                 .process("Assets.xcassets")
             ]
         ),
-        .testTarget( // For unit tests
-            name: "ASimplePurchaseKitTests",
+        .testTarget(
+            name: "UnitTests",
             dependencies: ["ASimplePurchaseKit"],
-            path: "Tests/ASimplePurchaseKitTests"
+            path: "Tests/UnitTests"
         ),
-        .testTarget( // For integration tests, hosted by TestHostApp
-            name: "PurchaseKitIntegrationTests",
+        .testTarget(
+            name: "IntegrationTests",
             dependencies: [
                 "ASimplePurchaseKit",
                 "TestHostApp" // This makes TestHostApp the host
             ],
-            path: "Tests/PurchaseKitIntegrationTests",
+            path: "Tests/IntegrationTests",
             resources: [
                 .copy("Resources/Products.storekit"),
                 .copy("Resources/TestLifetimeOnly.storekit"),
