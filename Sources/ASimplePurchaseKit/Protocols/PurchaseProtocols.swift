@@ -39,6 +39,14 @@ public protocol PromotionalOfferProtocol: Sendable {
     ///
     /// For free trials, this will typically be 0.
     var price: Decimal { get }
+    
+    /// The localized price of the promotional offer, formatted for the user's locale.
+    ///
+    /// This string includes the currency symbol and is ready for display in your UI.
+    /// For example: "$1.99" or "€0.99".
+    /// For free trials, this will typically be formatted as "$0.00" or the equivalent
+    /// in the user's currency.
+    var displayPrice: String { get }
 
     /// The payment mode for this promotional offer.
     ///

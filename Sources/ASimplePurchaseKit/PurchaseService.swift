@@ -293,7 +293,7 @@ public class PurchaseService: ObservableObject {
 
         setPurchaseState(.purchasing(productID: logProductID), operation: currentOperation)
         self.lastFailure = nil
-        let offerLog = logOfferID != nil ? " with offerID: \(logOfferID!)" : ""
+        let offerLog = logOfferID.map { " with offerID: \($0)" } ?? ""
         log(.info, "Attempting to purchase productID: \(logProductID)\(offerLog).", productID: logProductID, operation: currentOperation)
 
         do {

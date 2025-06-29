@@ -16,6 +16,7 @@ public struct MockPromotionalOffer: PromotionalOfferProtocol, Hashable, Sendable
     public var id: String?
     public var displayName: String
     public var price: Decimal
+    public var displayPrice: String
     public var paymentMode: Product.SubscriptionOffer.PaymentMode
     public var period: Product.SubscriptionPeriod
     public var type: Product.SubscriptionOffer.OfferType
@@ -30,10 +31,11 @@ public struct MockPromotionalOffer: PromotionalOfferProtocol, Hashable, Sendable
     }
 
     // Example initializer for tests
-    public init(id: String? = nil, displayName: String = "Test Offer", price: Decimal = 0.0, paymentMode: Product.SubscriptionOffer.PaymentMode = .freeTrial, period: Product.SubscriptionPeriod = .weekly, type: Product.SubscriptionOffer.OfferType = .introductory) {
+    public init(id: String? = nil, displayName: String = "Test Offer", price: Decimal = 0.0, displayPrice: String = "$0.00", paymentMode: Product.SubscriptionOffer.PaymentMode = .freeTrial, period: Product.SubscriptionPeriod = .weekly, type: Product.SubscriptionOffer.OfferType = .introductory) {
         self.id = id
         self.displayName = displayName
         self.price = price
+        self.displayPrice = displayPrice
         self.paymentMode = paymentMode
         self.period = period
         self.type = type

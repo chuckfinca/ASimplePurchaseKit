@@ -28,10 +28,12 @@ internal struct StoreKitPromotionalOfferAdapter: PromotionalOfferProtocol, Senda
     }
 
     public var displayName: String {
+        // TODO: Replace with offer.displayName once available in iOS 26
         return "Promo: \(offer.paymentMode) for \(offer.period.value) \(offer.period.unit)"
     }
 
     public var price: Decimal { offer.price }
+    public var displayPrice: String { offer.displayPrice }
     public var paymentMode: Product.SubscriptionOffer.PaymentMode { offer.paymentMode }
     public var period: Product.SubscriptionPeriod { offer.period }
     public var type: Product.SubscriptionOffer.OfferType { offer.type }

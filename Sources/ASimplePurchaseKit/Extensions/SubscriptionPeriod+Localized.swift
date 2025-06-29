@@ -8,10 +8,20 @@
 import StoreKit
 
 public extension Product.SubscriptionPeriod {
-
+    
     /// Provides a user-friendly, localized description of the subscription period.
-    /// For example, a period of 1 month will be "1 month", 3 months "3 months", 1 year "1 year".
-    /// This uses `DateComponentsFormatter` for localization according to the user's locale.
+    ///
+    /// This uses `DateComponentsFormatter` to provide a natural-language string
+    /// representing the period, such as "1 month", "7 days", or "1 year",
+    /// formatted for the user's locale.
+    ///
+    /// ## Usage
+    /// ```swift
+    /// if let subscription = product.subscription {
+    ///     let periodText = subscription.subscriptionPeriod.localizedDescription
+    ///     // periodText might be "1 month"
+    /// }
+    /// ```
     var localizedDescription: String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.day, .weekOfMonth, .month, .year]
