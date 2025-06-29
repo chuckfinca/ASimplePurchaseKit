@@ -72,25 +72,64 @@ public class PurchaseService: ObservableObject {
     /// This array is populated by calling `fetchProducts()` and can be used to build your paywall UI.
     /// It will be empty until the initial fetch is complete.
     @Published public internal(set) var availableProducts: [any ProductProtocol] = []
-    
+
     /// The user's current entitlement status.
     ///
     /// Observe this property in your UI to grant or deny access to premium features.
     /// Use the `.isActive` computed property for a simple boolean check.
     @Published public internal(set) var entitlementStatus: EntitlementStatus = .unknown
-    
+
     /// The current state of the purchase service, indicating if it's idle or performing an operation.
     ///
     /// Use this to show activity indicators or disable UI elements during operations like
     /// `.fetchingProducts`, `.purchasing`, or `.restoring`.
     @Published public internal(set) var purchaseState: PurchaseState = .idle
-    
+
+    /// A convenience property that returns true if the service is busy with any operation.
+    ///
+    /// Use this to disable buttons or show a general activity indicator in your UI.
+    ///
+    /// ## Usage
+    /// ```swift
+    /// Button("Buy") { ... }
+    ///     .disabled(purchaseService.isProcessing)
+    ///
+    /// if purchaseService.isProcessing {
+    ///     ProgressView()
+    /// }
+    /// ```
+    @Published public var isProcessing: Bool = false
+
+    // To make this work, we need to update `setPurchaseState`
+    private func setPurchaseState(_ newState: PurchaseState, operation: String, productID: String? = nil) {
+        if self.purchaseState != newState {
+            log(.debug, "PurchaseState changed: \(self.purchaseState) -> \(newState) (Op: \(operation))", productID: productID, operation: operation)
+            self.purchaseState = newState
+
+            // Update the isProcessing property
+            switch newState {
+            case .idle:
+                self.isProcessing = false
+            case .fetchingProducts, .purchasing, .restoring, .checkingEntitlement:
+                self.isProcessing = true
+            }
+        }
+    }
+
     /// The last failure that occurred, containing the error and operational context.
     ///
     /// This is set to `nil` at the start of a new operation. Check this property to display
     /// relevant error messages to the user.
     @Published public private(set) var lastFailure: PurchaseFailure?
-    
+
+    /// A convenience property that returns true if the service is currently in the process of a purchase.
+    public var hasPendingPurchases: Bool {
+        if case .purchasing = purchaseState {
+            return true
+        }
+        return false
+    }
+
     /// A delegate to receive logging and other service events.
     ///
     /// Assign a delegate to this property to pipe logs and metrics into your own analytics system.
@@ -211,9 +250,10 @@ public class PurchaseService: ObservableObject {
 
     // MARK: - Public API - Product Fetching
 
-    /// Fetches product information from the App Store.
+    /// Fetches product information from the App Store with a retry mechanism.
     ///
     /// This method fetches product details for the `productIDs` provided during initialization.
+    /// It will attempt to fetch up to 3 times with exponential backoff if a network-related error occurs.
     /// It updates the `availableProducts` property upon completion.
     /// The `purchaseState` will be set to `.fetchingProducts` during the operation.
     public func fetchProducts() async {
@@ -226,104 +266,150 @@ public class PurchaseService: ObservableObject {
         self.lastFailure = nil
         log(.info, "Fetching products for IDs: \(productIDs.joined(separator: ", ")).", operation: currentOperation)
 
-        do {
-            let fetchedProducts: [any ProductProtocol] = try await productProvider.fetchProducts(for: productIDs)
+        let maxRetries = 3
+        var lastError: Error?
 
-            self.availableProducts = fetchedProducts
+        for attempt in 1...maxRetries {
+            do {
+                let fetchedProducts: [any ProductProtocol] = try await productProvider.fetchProducts(for: productIDs)
 
-            self.storeKitProducts.removeAll()
-            for product in fetchedProducts {
-                if let adapter = product as? StoreKitProductAdapter {
-                    self.storeKitProducts[adapter.id] = adapter.underlyingStoreKitProduct
+                self.availableProducts = fetchedProducts
+
+                self.storeKitProducts.removeAll()
+                for product in fetchedProducts {
+                    if let adapter = product as? StoreKitProductAdapter {
+                        self.storeKitProducts[adapter.id] = adapter.underlyingStoreKitProduct
+                    }
+                }
+
+                log(.info, "Successfully fetched \(availableProducts.count) products on attempt \(attempt).", operation: currentOperation)
+
+                if availableProducts.isEmpty && !productIDs.isEmpty {
+                    log(.warning, "Fetched 0 products, but product IDs were provided. Check configuration or StoreKit availability.", operation: currentOperation)
+                    setFailure(.productsNotFound, operation: currentOperation)
+                }
+
+                // Success, so exit the retry loop
+                setPurchaseState(.idle, operation: currentOperation)
+                return
+
+            } catch {
+                lastError = error
+                log(.warning, "Attempt \(attempt)/\(maxRetries) to fetch products failed.", error: error, operation: currentOperation)
+                if attempt < maxRetries {
+                    let delayInSeconds = pow(2.0, Double(attempt)) // 2, 4 seconds
+                    log(.info, "Waiting \(delayInSeconds) seconds before next attempt.", operation: currentOperation)
+                    try? await Task.sleep(for: .seconds(delayInSeconds))
                 }
             }
-
-            log(.info, "Successfully fetched \(availableProducts.count) products.", operation: currentOperation)
-
-            if availableProducts.isEmpty && !productIDs.isEmpty {
-                log(.warning, "Fetched 0 products, but product IDs were provided. Check configuration or StoreKit availability.", operation: currentOperation)
-                setFailure(.productsNotFound, operation: currentOperation)
-            }
-
-        } catch let e as PurchaseError {
-            self.availableProducts = []
-            self.storeKitProducts.removeAll()
-            setFailure(e, operation: currentOperation)
-        } catch {
-            self.availableProducts = []
-            self.storeKitProducts.removeAll()
-            setFailure(.underlyingError(error), operation: currentOperation)
         }
+
+        // If all retries failed
+        self.availableProducts = []
+        self.storeKitProducts.removeAll()
+
+        if let finalError = lastError {
+            let purchaseError = (finalError as? PurchaseError) ?? .underlyingError(finalError)
+            setFailure(purchaseError, operation: currentOperation)
+        } else {
+            // This case should not be hit if the loop finishes, but as a fallback
+            setFailure(.unknown, operation: currentOperation)
+        }
+
         setPurchaseState(.idle, operation: currentOperation)
     }
 
     // MARK: - Public API - Purchasing
 
+    // Replace the entire `purchase` method with this new version.
     /// Initiates the purchase flow for a given product identifier.
     ///
     /// The product must have been previously fetched and be present in `availableProducts`.
     /// The service's `purchaseState` will be updated to `.purchasing(productID)` during the flow.
-    /// Upon completion, `entitlementStatus` will be updated and `lastFailure` will be set if an error occurred.
+    /// Upon completion, `entitlementStatus` will be updated for non-consumables.
     ///
     /// - Parameters:
     ///   - productID: The string identifier of the product to purchase.
-    ///   - offerID: An optional identifier for a specific promotional offer. Required for purchasing promotional offers.
-    public func purchase(productID: String, offerID: String? = nil) async {
+    ///   - offerID: An optional identifier for a specific promotional offer.
+    /// - Returns: The verified `Transaction` for the purchase. The caller is responsible for calling `await transaction.finish()` after granting the user their content.
+    /// - Throws: `PurchaseError` if the purchase fails, is cancelled, or the product is not available.
+    public func purchase(productID: String, offerID: String? = nil) async throws -> Transaction {
         let currentOperation = "purchase"
         let logProductID = productID
         let logOfferID = offerID
 
         if case .purchasing(let currentPurchasingProductID) = purchaseState {
             log(.warning, "Purchase already in progress for product \(currentPurchasingProductID). Requested: \(logProductID).", productID: logProductID, operation: currentOperation)
-            setFailure(.purchasePending, productID: logProductID, operation: currentOperation)
-            return
+            let error = PurchaseError.purchasePending
+            setFailure(error, productID: logProductID, operation: currentOperation)
+            throw error
         }
 
         guard availableProducts.first(where: { $0.id == logProductID }) != nil else {
             log(.error, "Product ID \(logProductID) not found in availableProducts.", productID: logProductID, operation: currentOperation)
-            setFailure(.productNotAvailableForPurchase(productID: logProductID), productID: logProductID, operation: currentOperation)
-            return
+            let error = PurchaseError.productNotAvailableForPurchase(productID: logProductID)
+            setFailure(error, productID: logProductID, operation: currentOperation)
+            throw error
         }
 
         guard let underlyingStoreKitProduct = storeKitProducts[logProductID] else {
             log(.error, "Product \(logProductID) does not have a corresponding StoreKit.Product. It may be a mock or purchase is not possible.", productID: logProductID, operation: currentOperation)
-            setFailure(.productNotAvailableForPurchase(productID: logProductID), productID: logProductID, operation: currentOperation)
-            return
+            let error = PurchaseError.productNotAvailableForPurchase(productID: logProductID)
+            setFailure(error, productID: logProductID, operation: currentOperation)
+            throw error
         }
 
         setPurchaseState(.purchasing(productID: logProductID), operation: currentOperation)
         self.lastFailure = nil
-        let offerLog = logOfferID.map { " with offerID: \($0)" } ?? ""
+        let offerLog = logOfferID.map { " with offerID: \($0)" } ?? "" // Safer unwrapping
         log(.info, "Attempting to purchase productID: \(logProductID)\(offerLog).", productID: logProductID, operation: currentOperation)
 
         do {
             let transaction = try await purchaser.purchase(underlyingStoreKitProduct, offerIdentifier: logOfferID)
             log(.info, "Purchase successful for productID: \(logProductID), transactionID: \(transaction.id). Validating...", productID: logProductID, operation: currentOperation)
 
+            // After a purchase, always re-validate entitlements for non-consumables.
+            // For consumables, this will just reaffirm the .notSubscribed state, which is fine.
             self.entitlementStatus = try await receiptValidator.validate(transaction: transaction)
-            log(.info, "Entitlement updated to \(self.entitlementStatus) after purchase of \(logProductID). Finishing transaction.", productID: logProductID, operation: currentOperation)
+            log(.info, "Entitlement updated to \(self.entitlementStatus) after purchase of \(logProductID).", productID: logProductID, operation: currentOperation)
 
-            await transaction.finish()
-            log(.info, "Transaction finished for \(logProductID).", productID: logProductID, operation: currentOperation)
+            // IMPORTANT: Return the transaction. Do NOT finish it here.
+            setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
+            return transaction
 
         } catch let e as PurchaseError {
             setFailure(e, productID: logProductID, operation: currentOperation)
-
+            setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
+            throw e
         } catch let skError as SKError {
             log(.error, "Purchase failed for productID \(logProductID) with SKError.", productID: logProductID, error: skError, operation: currentOperation)
-
+            let mappedError: PurchaseError
             switch skError.code {
             case .paymentCancelled:
-                setFailure(.purchaseCancelled, productID: logProductID, operation: currentOperation)
+                mappedError = .purchaseCancelled
             default:
-                setFailure(.purchaseFailed(skError.code), productID: logProductID, operation: currentOperation)
+                mappedError = .purchaseFailed(skError.code)
             }
+            setFailure(mappedError, productID: logProductID, operation: currentOperation)
+            setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
+            throw mappedError
         }
         catch {
             log(.error, "Purchase failed for productID \(logProductID) with an unexpected error.", productID: logProductID, error: error, operation: currentOperation)
-            setFailure(.underlyingError(error), productID: logProductID, operation: currentOperation)
+            let mappedError = PurchaseError.underlyingError(error)
+            setFailure(mappedError, productID: logProductID, operation: currentOperation)
+            setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
+            throw mappedError
         }
-        setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
+    }
+
+    /// Allows manually resetting the purchase state.
+    ///
+    /// This can be useful if the UI gets stuck in a purchasing state due to an unexpected error.
+    /// Use with caution, as it can hide underlying issues.
+    public func cancelPendingPurchases() {
+        log(.warning, "Manually resetting purchase state from \(purchaseState) to idle.", operation: "cancelPendingPurchases")
+        self.purchaseState = .idle
     }
 
     /// Returns the promotional offers available for a given subscription product.
