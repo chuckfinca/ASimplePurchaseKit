@@ -100,22 +100,6 @@ public class PurchaseService: ObservableObject {
     /// ```
     @Published public var isProcessing: Bool = false
 
-    // To make this work, we need to update `setPurchaseState`
-    private func setPurchaseState(_ newState: PurchaseState, operation: String, productID: String? = nil) {
-        if self.purchaseState != newState {
-            log(.debug, "PurchaseState changed: \(self.purchaseState) -> \(newState) (Op: \(operation))", productID: productID, operation: operation)
-            self.purchaseState = newState
-
-            // Update the isProcessing property
-            switch newState {
-            case .idle:
-                self.isProcessing = false
-            case .fetchingProducts, .purchasing, .restoring, .checkingEntitlement:
-                self.isProcessing = true
-            }
-        }
-    }
-
     /// The last failure that occurred, containing the error and operational context.
     ///
     /// This is set to `nil` at the start of a new operation. Check this property to display
@@ -408,8 +392,8 @@ public class PurchaseService: ObservableObject {
     /// This can be useful if the UI gets stuck in a purchasing state due to an unexpected error.
     /// Use with caution, as it can hide underlying issues.
     public func cancelPendingPurchases() {
-        log(.warning, "Manually resetting purchase state from \(purchaseState) to idle.", operation: "cancelPendingPurchases")
-        self.purchaseState = .idle
+        // Use the centralized setter to ensure all related properties are updated.
+        setPurchaseState(.idle, operation: "cancelPendingPurchases")
     }
 
     /// Returns the promotional offers available for a given subscription product.
@@ -598,10 +582,18 @@ public class PurchaseService: ObservableObject {
         }
     }
 
-    private func setPurchaseState(_ newState: PurchaseState, operation: String, productID: String? = nil) {
+    internal func setPurchaseState(_ newState: PurchaseState, operation: String, productID: String? = nil) {
         if self.purchaseState != newState {
             log(.debug, "PurchaseState changed: \(self.purchaseState) -> \(newState) (Op: \(operation))", productID: productID, operation: operation)
             self.purchaseState = newState
+
+            // Update the isProcessing property based on the new state
+            switch newState {
+            case .idle:
+                self.isProcessing = false
+            case .fetchingProducts, .purchasing, .restoring, .checkingEntitlement:
+                self.isProcessing = true
+            }
         }
     }
 

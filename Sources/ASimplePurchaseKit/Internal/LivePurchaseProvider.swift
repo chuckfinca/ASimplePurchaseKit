@@ -208,10 +208,20 @@ internal class LivePurchaseProvider: ProductProvider, Purchaser, ReceiptValidato
                 isInGracePeriod = true
             }
             return .subscribed(expires: expirationDate, isInGracePeriod: isInGracePeriod)
+
         case .nonConsumable, .nonRenewable:
+            // Non-consumables and non-renewing subscriptions grant a persistent entitlement.
             return .subscribed(expires: nil, isInGracePeriod: false)
+
+        case .consumable:
+            // Consumables are single-use and do not grant a persistent entitlement.
+            // The app grants the item and then finishes the transaction.
+            return .notSubscribed
+
         default:
+            // Handle any future product types Apple might introduce.
             return .notSubscribed
         }
+
     }
 }

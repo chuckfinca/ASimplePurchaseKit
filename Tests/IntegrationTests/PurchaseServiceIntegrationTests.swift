@@ -26,7 +26,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
     // Product IDs from TestSubscriptionWithIntroOffer.storekit
     let trialProductIDAlpha = "com.asimplepurchasekit.sub.withtrial.alpha"
     let discountProductIDAlpha = "com.asimplepurchasekit.sub.withdiscount.alpha"
-    
+
     // Offer IDs from TestSubscriptionWithIntroOffer.storekit
     let freeTrialOfferIDAlpha = "free_trial_7_days_offer_a"
     let discountOfferIDAlpha = "pay_upfront_1_month_offer_a"
@@ -349,7 +349,14 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         }.store(in: &localCancellables)
 
         print("🧪 Attempting to purchase \(trialProductIDAlpha) with offer \(freeTrialOffer.id ?? "N/A") (\(freeTrialOffer.displayName))...")
-        await sut.purchase(productID: trialProductIDAlpha, offerID: freeTrialOffer.id)
+        do {
+            let transaction = try await sut.purchase(productID: trialProductIDAlpha, offerID: freeTrialOffer.id)
+            // For non-consumables, the transaction listener will handle finishing it,
+            // but we'll explicitly finish it here for test robustness.
+            await transaction.finish()
+        } catch {
+            XCTFail("Purchase with offer should not have thrown an error, but threw: \(error)")
+        }
 
         await fulfillment(of: [expectation], timeout: 15.0) // Increased timeout for purchase flow
 
@@ -399,7 +406,13 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             if status.isActive { purchaseExpectation.fulfill() }
         }.store(in: &localCancellables)
 
-        await sut.purchase(productID: monthlyProductID, offerID: nil)
+        do {
+            let transaction = try await sut.purchase(productID: monthlyProductID, offerID: nil)
+            await transaction.finish()
+        } catch {
+            XCTFail("Purchase should not have thrown an error, but threw: \(error)")
+        }
+        
         await fulfillment(of: [purchaseExpectation], timeout: 10.0)
 
         guard sut.entitlementStatus.isActive else {
@@ -467,7 +480,12 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         }.store(in: &localCancellables)
 
         print("🧪 Attempting to purchase \(monthlyProductID) using TestSubscriptionOnly.storekit...")
-        await sut.purchase(productID: monthlyProductID, offerID: nil)
+        do {
+            let transaction = try await sut.purchase(productID: monthlyProductID, offerID: nil)
+            await transaction.finish()
+        } catch {
+            XCTFail("Purchase should not have thrown an error, but threw: \(error)")
+        }
 
         await fulfillment(of: [expectation], timeout: 10.0)
 
@@ -518,9 +536,20 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
             }
         }.store(in: &activeCancellables)
 
-        await sut.purchase(productID: lifetimeProductID, offerID: nil)
+        do {
+            let transaction = try await sut.purchase(productID: lifetimeProductID, offerID: nil)
+            await transaction.finish()
+        } catch {
+            // This can still be skipped for the P2 bug
+            if let lastFailure = sut.lastFailure,
+               case .underlyingError(let underlyingError) = lastFailure.error, let skError = underlyingError as? SKError, skError.code == .unknown {
+                throw XCTSkip("Skipping full flow test due to P2 (StoreKitError.unknown on purchase). Error: \(lastFailure.error.localizedDescription)")
+            }
+            XCTFail("Purchase should not have thrown an error, but threw: \(error)")
+        }
+        
         if let lastFailure = sut.lastFailure,
-           case .underlyingError(let underlyingError) = lastFailure.error, let skError = underlyingError as? SKError, skError.code == .unknown {
+            case .underlyingError(let underlyingError) = lastFailure.error, let skError = underlyingError as? SKError, skError.code == .unknown {
             throw XCTSkip("Skipping full flow test due to P2 (StoreKitError.unknown on purchase). Error: \(lastFailure.error.localizedDescription)")
         }
 
@@ -582,24 +611,22 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         cancelSession.failTransactionsEnabled = true
         cancelSession.failureError = .paymentCancelled
 
-        await sutCancel.purchase(productID: lifetimeProductID, offerID: nil)
-
-        // P6: SKTestSession.failureError = .paymentCancelled results in .unknown underlying error
-        // PurchaseService now catches SKError.paymentCancelled and maps it to PurchaseError.purchaseCancelled
-        // The LivePurchaseProvider should throw PurchaseError.purchaseCancelled if result is .userCancelled
-        // Or if product.purchase() itself throws SKError.paymentCancelled.
-
-        if sutCancel.lastFailure?.error == .purchaseCancelled {
+        do {
+            _ = try await sutCancel.purchase(productID: lifetimeProductID, offerID: nil)
+            XCTFail("Purchase should have thrown an error for cancellation but did not.")
+        } catch PurchaseError.purchaseCancelled {
+            // This is the expected success path for this test.
             XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active after correctly cancelled purchase.")
             print("✅ Cancellation simulated as .paymentCancelled correctly.")
-        } else if case .underlyingError(let underlyingError) = sutCancel.lastFailure?.error,
-            let skError = underlyingError as? SKError, skError.code == .unknown {
-            print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.underlyingError(SKError.unknown)`. This indicates the StoreKit test bug P6 is active, where the raw SKError bubbles up instead of PurchaseResult.userCancelled.")
+        } catch PurchaseError.underlyingError(let underlyingError) where (underlyingError as? SKError)?.code == .unknown {
+            // This is the P6 bug path.
+            print("⚠️ P6 DETECTED: `SKTestSession.failureError = .paymentCancelled` resulted in `.underlyingError(SKError.unknown)`. This indicates the StoreKit test bug P6 is active...")
             XCTAssertFalse(sutCancel.entitlementStatus.isActive, "Entitlement should not be active after P6-affected cancelled purchase.")
             throw XCTSkip("Skipping direct assertion for .purchaseCancelled due to P6 - SKTestSession bug. SUT reported SKError.unknown.")
-        } else {
-            XCTFail("Expected .purchaseCancelled or P6-related .underlyingError(SKError.unknown), but got \(String(describing: sutCancel.lastFailure?.error)). Entitlement: \(sutCancel.entitlementStatus)")
+        } catch {
+            XCTFail("Expected .purchaseCancelled or P6-related error, but got \(error). Entitlement: \(sutCancel.entitlementStatus)")
         }
+        
         cancelSession.failTransactionsEnabled = false
     }
 
@@ -657,9 +684,13 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         self.session.failTransactionsEnabled = true
         self.session.failureError = .paymentCancelled
 
-        await self.sut.purchase(productID: lifetimeProductID, offerID: nil)
+        do {
+            let transaction = try await sut.purchase(productID: lifetimeProductID, offerID: nil)
+            await transaction.finish()
+        } catch {
+            XCTFail("Purchase should not have thrown an error, but threw: \(error)")
+        }
 
-        
 
         if self.sut.lastFailure?.error == .purchaseCancelled { // or self.sut.lastFailure for the globalSUT test
             XCTAssertFalse(self.sut.entitlementStatus.isActive, "Entitlement should not be active after correctly cancelled purchase.")
@@ -676,4 +707,52 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         self.session.failTransactionsEnabled = false // Reset for other tests
     }
+    
+    func test_consumable_fullFlow() async throws {
+        let consumableProductID = "com.asimplepurchasekit.consumable.100coins"
+        
+        // ARRANGE
+        let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
+            storeKitFilename: "TestConsumableOnly.storekit",
+            productIDsForConfig: [consumableProductID]
+        )
+        var activeCancellables = cancellables; defer { activeCancellables.forEach { $0.cancel() } }
+
+        guard sut.availableProducts.first(where: { $0.id == consumableProductID }) != nil else {
+            XCTFail("Consumable product '\(consumableProductID)' not found. Check TestConsumableOnly.storekit and Package.swift.")
+            return
+        }
+
+        // Ensure we start with no entitlement
+        await sut.updateEntitlementStatus()
+        XCTAssertFalse(sut.entitlementStatus.isActive, "Entitlement should not be active before purchasing a consumable.")
+        
+        // ACT
+        do {
+            let transaction = try await sut.purchase(productID: consumableProductID, offerID: nil)
+            
+            // ASSERT
+            XCTAssertEqual(transaction.productType, .consumable, "The purchased product should be a consumable.")
+            XCTAssertEqual(transaction.productID, consumableProductID)
+            
+            // CRITICAL: A consumable purchase should NOT grant an active entitlement.
+            XCTAssertFalse(sut.entitlementStatus.isActive, "Entitlement status should remain inactive after purchasing a consumable.")
+            
+            // The app would now grant the user the 100 coins.
+            print("✅ Simulating granting 100 coins to the user.")
+
+            // The caller is responsible for finishing the transaction.
+            await transaction.finish()
+            
+            // Verify the transaction is consumed and gone from the queue.
+            let allTransactions = session.allTransactions()
+            XCTAssertFalse(allTransactions.contains(where: { $0.identifier == transaction.id }), "Finished transaction should be removed from the test session queue.")
+
+        } catch {
+            XCTFail("Consumable purchase should have succeeded, but threw error: \(error)")
+        }
+        
+        XCTAssertNil(sut.lastFailure, "There should be no lingering failure on the service after a successful consumable purchase.")
+    }
+
 }
