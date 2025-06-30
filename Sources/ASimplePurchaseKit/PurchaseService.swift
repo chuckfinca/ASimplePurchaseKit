@@ -315,7 +315,8 @@ public class PurchaseService: ObservableObject {
     /// - Parameters:
     ///   - productID: The string identifier of the product to purchase.
     ///   - offerID: An optional identifier for a specific promotional offer.
-    /// - Returns: The verified `Transaction` for the purchase. The caller is responsible for calling `await transaction.finish()` after granting the user their content.
+    /// - Returns: The verified `Transaction` for the purchase.
+    /// - Important: The caller is responsible for finishing the transaction by calling `await transaction.finish()`. For consumables, this should be done only *after* the content has been granted. For all other product types, it should be called immediately.
     /// - Throws: `PurchaseError` if the purchase fails, is cancelled, or the product is not available.
     public func purchase(productID: String, offerID: String? = nil) async throws -> Transaction {
         let currentOperation = "purchase"
@@ -385,6 +386,31 @@ public class PurchaseService: ObservableObject {
             setPurchaseState(.idle, operation: currentOperation, productID: logProductID)
             throw mappedError
         }
+    }
+
+    /// Purchases a product and immediately finishes the transaction upon success.
+    ///
+    /// This is a convenience method that wraps the main `purchase(productID:offerID:)` call.
+    /// It is best used for non-consumable products or subscriptions where access is controlled
+    /// by the library's `entitlementStatus`, and no server-side validation or content-granting
+    /// logic is needed before finishing the transaction.
+    ///
+    /// - Warning: Do not use this method for **consumable products**. For consumables, you must use the
+    ///   main `purchase(productID:offerID:)` method, grant the content to the user, and *then*
+    ///   manually call `await transaction.finish()`.
+    ///
+    /// - Parameters:
+    ///   - productID: The string identifier of the product to purchase.
+    ///   - offerID: An optional identifier for a specific promotional offer.
+    /// - Throws: `PurchaseError` if the purchase or validation fails.
+    public func purchaseAndFinish(productID: String, offerID: String? = nil) async throws {
+        let transaction = try await self.purchase(productID: productID, offerID: offerID)
+
+        // Immediately finish the transaction.
+        // The entitlementStatus is already updated by the underlying purchase() call.
+        await transaction.finish()
+
+        log(.info, "Transaction \(transaction.id) for product \(productID) was purchased and finished automatically.", productID: productID, operation: "purchaseAndFinish")
     }
 
     /// Allows manually resetting the purchase state.

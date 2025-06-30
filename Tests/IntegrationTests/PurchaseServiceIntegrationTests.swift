@@ -412,7 +412,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } catch {
             XCTFail("Purchase should not have thrown an error, but threw: \(error)")
         }
-        
+
         await fulfillment(of: [purchaseExpectation], timeout: 10.0)
 
         guard sut.entitlementStatus.isActive else {
@@ -542,12 +542,12 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } catch {
             // This can still be skipped for the P2 bug
             if let lastFailure = sut.lastFailure,
-               case .underlyingError(let underlyingError) = lastFailure.error, let skError = underlyingError as? SKError, skError.code == .unknown {
+                case .underlyingError(let underlyingError) = lastFailure.error, let skError = underlyingError as? SKError, skError.code == .unknown {
                 throw XCTSkip("Skipping full flow test due to P2 (StoreKitError.unknown on purchase). Error: \(lastFailure.error.localizedDescription)")
             }
             XCTFail("Purchase should not have thrown an error, but threw: \(error)")
         }
-        
+
         if let lastFailure = sut.lastFailure,
             case .underlyingError(let underlyingError) = lastFailure.error, let skError = underlyingError as? SKError, skError.code == .unknown {
             throw XCTSkip("Skipping full flow test due to P2 (StoreKitError.unknown on purchase). Error: \(lastFailure.error.localizedDescription)")
@@ -626,7 +626,7 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } catch {
             XCTFail("Expected .purchaseCancelled or P6-related error, but got \(error). Entitlement: \(sutCancel.entitlementStatus)")
         }
-        
+
         cancelSession.failTransactionsEnabled = false
     }
 
@@ -707,10 +707,10 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
 
         self.session.failTransactionsEnabled = false // Reset for other tests
     }
-    
+
     func test_consumable_fullFlow() async throws {
         let consumableProductID = "com.asimplepurchasekit.consumable.100coins"
-        
+
         // ARRANGE
         let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
             storeKitFilename: "TestConsumableOnly.storekit",
@@ -726,24 +726,24 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         // Ensure we start with no entitlement
         await sut.updateEntitlementStatus()
         XCTAssertFalse(sut.entitlementStatus.isActive, "Entitlement should not be active before purchasing a consumable.")
-        
+
         // ACT
         do {
             let transaction = try await sut.purchase(productID: consumableProductID, offerID: nil)
-            
+
             // ASSERT
             XCTAssertEqual(transaction.productType, .consumable, "The purchased product should be a consumable.")
             XCTAssertEqual(transaction.productID, consumableProductID)
-            
+
             // CRITICAL: A consumable purchase should NOT grant an active entitlement.
             XCTAssertFalse(sut.entitlementStatus.isActive, "Entitlement status should remain inactive after purchasing a consumable.")
-            
+
             // The app would now grant the user the 100 coins.
             print("✅ Simulating granting 100 coins to the user.")
 
             // The caller is responsible for finishing the transaction.
             await transaction.finish()
-            
+
             // Verify the transaction is consumed and gone from the queue.
             let allTransactions = session.allTransactions()
             XCTAssertFalse(allTransactions.contains(where: { $0.identifier == transaction.id }), "Finished transaction should be removed from the test session queue.")
@@ -751,8 +751,43 @@ final class PurchaseServiceIntegrationTests: XCTestCase {
         } catch {
             XCTFail("Consumable purchase should have succeeded, but threw error: \(error)")
         }
-        
+
         XCTAssertNil(sut.lastFailure, "There should be no lingering failure on the service after a successful consumable purchase.")
     }
 
+    func test_purchaseAndFinish_forConsumable_clearsTransactionFromQueue() async throws {
+        let consumableProductID = "com.asimplepurchasekit.consumable.100coins"
+
+        // ARRANGE
+        // 1. Set up the SUT with the consumable-only storekit file.
+        let (sut, session, cancellables) = try await setupSUTWithStoreKitFile(
+            storeKitFilename: "TestConsumableOnly.storekit",
+            productIDsForConfig: [consumableProductID]
+        )
+        var activeCancellables = cancellables; defer { activeCancellables.forEach { $0.cancel() } }
+
+        // 2. Verify the product is available and the transaction queue is empty.
+        guard sut.availableProducts.first(where: { $0.id == consumableProductID }) != nil else {
+            XCTFail("Consumable product '\(consumableProductID)' not found. Test cannot proceed.")
+            return
+        }
+        XCTAssertTrue(session.allTransactions().isEmpty, "Pre-condition: SKTestSession should have no transactions initially.")
+
+        // ACT
+        // 3. Call the convenience method under test.
+        do {
+            try await sut.purchaseAndFinish(productID: consumableProductID, offerID: nil)
+        } catch {
+            XCTFail("purchaseAndFinish should not have thrown an error, but threw: \(error)")
+        }
+
+        // ASSERT
+        // 4. The key assertion: The transaction queue in the test session should be empty.
+        //    This proves that the transaction was successfully created and then finished.
+        XCTAssertTrue(session.allTransactions().isEmpty, "The transaction queue should be empty after purchaseAndFinish completes, indicating transaction.finish() was called.")
+
+        // 5. Verify the state of the service is correct.
+        XCTAssertNil(sut.lastFailure, "The service should not have a lastFailure set after a successful purchaseAndFinish.")
+        XCTAssertFalse(sut.entitlementStatus.isActive, "Entitlement status should remain inactive after purchasing a consumable, which is correct.")
+    }
 }
