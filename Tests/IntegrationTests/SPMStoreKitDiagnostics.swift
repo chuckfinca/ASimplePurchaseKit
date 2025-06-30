@@ -1,4 +1,4 @@
-// Tests/PurchaseKitIntegrationTests/SPMStoreKitDiagnostics.swift
+// Tests/IntegrationTests/SPMStoreKitDiagnostics.swift
 
 import XCTest
 import StoreKit
@@ -13,7 +13,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         "com.asimplepurchasekit.pro.yearly"
     ]
     let lifetimeProductID = "com.asimplepurchasekit.pro.lifetime"
-    let nestedBundleName = "ASimplePurchaseKitProject_PurchaseKitIntegrationTests.bundle" // Adjust if SPM names it differently
+    let nestedBundleName = "ASimplePurchaseKit_IntegrationTests.bundle" // Adjust if SPM names it differently
 
     override func setUpWithError() throws {
         print("\n==================================================================")
@@ -29,7 +29,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
 
     /// Attempts to find the nested resource bundle created by SPM for test targets.
     private func getSPMTestResourceBundle_PSI(mainTestBundle: Bundle) -> Bundle? { // Renamed to avoid conflict if SPMStoreKitDiagnostics is run together
-        let baseBundleName = "ASimplePurchaseKitProject_PurchaseKitIntegrationTests" // Base name without .bundle
+        let baseBundleName = "ASimplePurchaseKit_IntegrationTests" // Base name without .bundle
         let nestedBundleNameWithExtension = baseBundleName + ".bundle"
 
         // Try direct URL first
@@ -240,7 +240,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
         let name = (filename as NSString).deletingPathExtension
         let ext = (filename as NSString).pathExtension
 
-        // Based on your enumeration: ...ASimplePurchaseKitProject_PurchaseKitIntegrationTests.bundle/Products.storekit
+        // Based on your enumeration: ...ASimplePurchaseKit_IntegrationTests.bundle/Products.storekit
         // This means the files are at the ROOT of the spmResourceBundle.
         // The ".copy("Resources/Products.storekit")" in Package.swift means:
         // "Take Products.storekit from the 'Resources' FOLDER in my source tree
@@ -344,7 +344,7 @@ final class SPMStoreKitDiagnostics: XCTestCase {
                 print("  - ID: \(product.id), DisplayName: \(product.displayName), Price: \(product.displayPrice)")
             }
             if products.isEmpty {
-                print("ℹ️ 0 products found with specific IDs (scheme-based). This is expected if no default .storekit file is set in the test plan/scheme for the 'PurchaseKitIntegrationTests' target.")
+                print("ℹ️ 0 products found with specific IDs (scheme-based). This is expected if no default .storekit file is set in the test plan/scheme for the 'IntegrationTests' target.")
             }
         } catch {
             print("❌ ERROR fetching products with specific IDs (scheme-based): \(error)")

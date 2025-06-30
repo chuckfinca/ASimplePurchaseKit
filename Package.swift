@@ -2,57 +2,51 @@
 import PackageDescription
 
 let package = Package(
-    name: "ASimplePurchaseKitProject",
+    name: "ASimplePurchaseKit",
     defaultLocalization: "en",
     platforms: [
         .iOS("16.4"),
-        .macOS("13.3") // Keep if any part of your lib/tests is macOS compatible
+        .macOS("13.3")
     ],
     products: [
         .library(
             name: "ASimplePurchaseKit",
             targets: ["ASimplePurchaseKit"]
         ),
-        // You might not need to export TestHostApp as a product
-        // unless you intend for other packages to use it as an executable.
-        // For local testing, just having it as a target is usually sufficient.
-        // .executable(
-        //     name: "TestHostApp",
-        //     targets: ["TestHostApp"]
-        // )
     ],
     dependencies: [],
     targets: [
         .target(
             name: "ASimplePurchaseKit",
             path: "Sources/ASimplePurchaseKit"
-            // No need to list system framework dependencies like StoreKit here
         ),
-        .executableTarget( // This is your app, used as a test host
+        .executableTarget(
             name: "TestHostApp",
             dependencies: ["ASimplePurchaseKit"],
-            path: "Sources/TestHostApp", // Corresponds to your tree structure
+            path: "Sources/TestHostApp",
             resources: [
-                .process("Assets.xcassets") // For app icons, etc.
+                .process("Assets.xcassets")
             ]
         ),
-        .testTarget( // Unit tests for the library (no StoreKit interaction typically)
-            name: "ASimplePurchaseKitTests",
+        .testTarget(
+            name: "UnitTests",
             dependencies: ["ASimplePurchaseKit"],
-            path: "Tests/ASimplePurchaseKitTests"
+            path: "Tests/UnitTests"
         ),
-        .testTarget( // Integration tests, hosted by TestHostApp
-            name: "PurchaseKitIntegrationTests",
+        .testTarget(
+            name: "IntegrationTests",
             dependencies: [
                 "ASimplePurchaseKit",
                 "TestHostApp" // This makes TestHostApp the host
             ],
-            path: "Tests/PurchaseKitIntegrationTests",
+            path: "Tests/IntegrationTests",
             resources: [
                 .copy("Resources/Products.storekit"),
                 .copy("Resources/TestLifetimeOnly.storekit"),
                 .copy("Resources/TestMinimalSubscription.storekit"),
-                .copy("Resources/TestSubscriptionOnly.storekit")
+                .copy("Resources/TestSubscriptionOnly.storekit"),
+                .copy("Resources/TestSubscriptionWithIntroOffer.storekit"),
+                .copy("Resources/TestConsumableOnly.storekit")
             ]
         )
     ]

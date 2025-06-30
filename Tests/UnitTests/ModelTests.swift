@@ -1,8 +1,12 @@
-// File: Tests/ASimplePurchaseKitTests/ModelTests.swift
-// (Or wherever you decide to put these model-specific tests)
+//
+//  ModelTests.swift
+//  ASimplePurchaseKit
+//
+//  Created by Charles Feinn on 6/10/25.
+//
 
 import XCTest
-import StoreKit // For VerificationResult if needed, though not directly used in these examples
+import StoreKit
 @testable import ASimplePurchaseKit
 
 class ModelTests: XCTestCase {
@@ -20,7 +24,6 @@ class ModelTests: XCTestCase {
         let date1 = Date()
         // Use a slightly different date for timestamp checks to ensure it matters
         let date2 = date1.addingTimeInterval(10)
-
 
         // Identical
         let failure1A = PurchaseFailure(error: .purchaseCancelled, productID: "test", operation: "purchase", timestamp: date1)

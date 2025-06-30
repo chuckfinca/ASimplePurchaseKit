@@ -1,0 +1,35 @@
+{
+  "configurations" : [
+    {
+      "id" : "AF48E210-467B-46A1-A491-47072BF5ABC9",
+      "name" : "Configuration 1",
+      "options" : {
+        "targetForVariableExpansion" : {
+          "containerPath" : "container:",
+          "identifier" : "UnitTests",
+          "name" : "ASimplePurchaseKit"
+        }
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "IntegrationTests",
+        "name" : "IntegrationTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "UnitTests",
+        "name" : "UnitTests"
+      }
+    }
+  ],
+  "version" : 1
+}
