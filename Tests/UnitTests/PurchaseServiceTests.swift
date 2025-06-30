@@ -562,7 +562,6 @@ final class PurchaseServiceTests: XCTestCase {
         XCTAssertEqual(sut.lastFailure?.operation, "getSubscriptionDetails")
     }
 
-
     // MARK: - canMakePayments Test
 
     // This is a basic test. SKPaymentQueue.canMakePayments() is a static method from StoreKit.

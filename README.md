@@ -9,7 +9,7 @@ A lightweight, modern, and testable Swift package for handling in-app purchases 
 - **Highly Testable**: Built with protocols and dependency injection, allowing you to easily mock the purchase flow in your unit tests.
 - **Automatic Transaction Handling**: Listens for `Transaction.updates` to automatically handle renewals, refunds, and purchases made outside the app.
 - **Simple Entitlement Checking**: A clear `EntitlementStatus` enum (`.subscribed`, `.notSubscribed`, `.unknown`) serves as the single source of truth for user access.
-- **Handles Subscriptions and One-Time Purchases**: Supports auto-renewable subscriptions, non-renewing subscriptions, and non-consumable products.
+- **Comprehensive Support**: Handles auto-renewable subscriptions, non-consumables (lifetime purchases), and consumables.
 - **Promotional Offer Support**: Fetch and purchase with StoreKit promotional offers (e.g., introductory offers).
 - **Transaction History**: Retrieve all verified transactions for the user.
 - **Utilities**: Includes helpers like localized subscription period descriptions.
@@ -49,7 +49,7 @@ import ASimplePurchaseKit
 struct YourApp: App {
     // Create the config with your product IDs
     private static let purchaseConfig = PurchaseConfig(
-        productIDs: ["com.yourapp.pro.monthly", "com.yourapp.pro.yearly", "com.yourapp.feature.lifetime"],
+        productIDs: ["com.yourapp.pro.monthly", "com.yourapp.pro.yearly", "com.yourapp.feature.lifetime", "com.yourapp.coins.100"],
         enableLogging: true // Enable detailed logging from the library
     )
     
@@ -151,10 +151,9 @@ struct ProductListingView: View {
                     Text("Available Offers:").font(.subheadline).padding(.top, 5)
                     ForEach(offers, id: \.id) { offer in // Assuming offer.id is unique enough for ForEach
                         Button(action: {
-                            // Select this offer for purchase
                             self.selectedOfferID = offer.id 
                             Task {
-                                await purchaseService.purchase(productID: product.id, offerID: offer.id)
+                                await handlePurchase(productID: product.id, offerID: offer.id)
                             }
                         }) {
                             HStack {
@@ -178,12 +177,11 @@ struct ProductListingView: View {
                 }
             }
             
-            // Standard purchase button (without specific offer, or for non-subscriptions)
+            // Standard purchase button (without specific offer, or for non-subscriptions/consumables)
             Button(action: {
                 self.selectedOfferID = nil // Clear specific offer selection
                 Task {
-                    // The purchase function is async
-                    await purchaseService.purchase(productID: product.id, offerID: nil)
+                    await handlePurchase(productID: product.id, offerID: nil)
                 }
             }) {
                 HStack {
@@ -205,6 +203,25 @@ struct ProductListingView: View {
         .background(Color.gray.opacity(0.1))
         .cornerRadius(10)
     }
+
+    private func handlePurchase(productID: String, offerID: String?) async {
+        do {
+            // The purchase function returns a verified transaction.
+            let transaction = try await purchaseService.purchase(productID: productID, offerID: offerID)
+
+            // The purchase was successful.
+            // The library automatically updates entitlementStatus for subscriptions and non-consumables.
+            // For consumables, you would now grant the content to the user (e.g., add coins).
+            print("Purchase successful, transaction ID: \(transaction.id)")
+
+            // IMPORTANT: You must finish the transaction once the content is granted.
+            await transaction.finish()
+            
+        } catch {
+            // The purchase failed. The `lastFailure` property on purchaseService will also be set.
+            print("Purchase failed: \(error.localizedDescription)")
+        }
+    }
 }
 
 // Helper for Product.SubscriptionOffer.PaymentMode description
@@ -219,10 +236,12 @@ extension Product.SubscriptionOffer.PaymentMode {
     }
 }
 
-// You'll need to define `ProductProtocol.displayPrice` (it's already there)
-// and `PromotionalOfferProtocol.displayPrice` if you create your own mock `PromotionalOfferProtocol`.
-// `StoreKit.Product.SubscriptionOffer.displayPrice` exists.
-```
+#### Important: Handling the Transaction
+After a successful purchase, the `purchase(productID:offerID:)` method returns a verified `StoreKit.Transaction`. Your app is then responsible for finishing this transaction by calling `await transaction.finish()`.
+
+- **For Subscriptions and Non-Consumables:** The library automatically updates the `entitlementStatus`. You simply need to call `finish()` on the transaction.
+- **For Consumables:** This pattern is critical. You must first grant the content to the user (e.g., add coins to their balance) and *then* call `finish()`. Finishing the transaction removes it from the payment queue, preventing the user from being granted the same content again on the next app launch.
+
 
 ### 3. Check Entitlement Status
 
@@ -255,7 +274,9 @@ struct PremiumFeaturesView: View {
             .font(.largeTitle)
     }
 }
+
 ```
+
 
 ### 4. Restore Purchases
 
@@ -288,10 +309,19 @@ Task {
 Task {
     if let subDetails = await purchaseService.getSubscriptionDetails(for: "com.yourapp.pro.monthly") {
         print("Monthly subscription state: \(subDetails.state)")
-        print("Will auto-renew: \(subDetails.renewalInfo.willAutoRenew)")
-        if let expirationDate = subDetails.renewalInfo.expirationDate {
-            print("Expires on: \(expirationDate)")
+        
+        // Safely unwrap the verified renewal info
+        switch subDetails.renewalInfo {
+        case .verified(let renewalInfo):
+            print("Will auto-renew: \(renewalInfo.willAutoRenew)")
+            if let expirationDate = renewalInfo.expirationDate {
+                print("Expires on: \(expirationDate)")
+            }
+        case .unverified(let renewalInfo, _):
+            // Handle unverified data if necessary, maybe show a warning
+            print("Renewal info is unverified but will auto-renew: \(renewalInfo.willAutoRenew)")
         }
+
     } else {
         print("No active subscription details found for com.yourapp.pro.monthly")
     }
@@ -362,14 +392,15 @@ final class MyViewModelTests: XCTestCase {
     var mockSyncer: MockAppStoreSyncer!
     var cancellables: Set<AnyCancellable>!
 
-    // Helper to set up the SUT with all mock dependencies
-    func initializeSUT(productIDs: [String]) {
+    // Use setUp to initialize state for each test
+    override func setUp() {
+        super.setUp()
         cancellables = []
         mockProvider = MockPurchaseProvider()
         mockSyncer = MockAppStoreSyncer()
         
         purchaseService = PurchaseService(
-            productIDs: productIDs,
+            productIDs: ["com.test.product"],
             productProvider: mockProvider,
             purchaser: mockProvider,
             receiptValidator: mockProvider,
@@ -380,18 +411,28 @@ final class MyViewModelTests: XCTestCase {
         )
     }
 
+    // Use tearDown to clean up after each test
+    override func tearDown() {
+        purchaseService = nil
+        mockProvider = nil
+        mockSyncer = nil
+        cancellables = nil
+        super.tearDown()
+    }
+
     func test_restorePurchases_whenSuccessful_updatesEntitlement() async throws {
         // ARRANGE
-        initializeSUT(productIDs: ["com.test.product"])
-        
         let expectation = XCTestExpectation(description: "Entitlement status changes to active after restore")
-        let cancellable = purchaseService.$entitlementStatus
-            .dropFirst() // Ignore initial .unknown status
+        
+        // The .store(in:) method correctly handles the subscription's lifecycle.
+        purchaseService.$entitlementStatus
+            .dropFirst() // Ignore initial status
             .sink { status in
                 if status.isActive {
                     expectation.fulfill()
                 }
             }
+            .store(in: &cancellables) // Store the subscription to keep it alive
         
         // ACT: Configure the mock providers to simulate a successful restore
         // 1. The syncer will succeed
@@ -410,7 +451,7 @@ final class MyViewModelTests: XCTestCase {
         XCTAssertTrue(purchaseService.entitlementStatus.isActive)
         XCTAssertNil(purchaseService.lastFailure)
         
-        cancellable.cancel()
+        // No need to manually cancel, tearDown handles it.
     }
 }
 
