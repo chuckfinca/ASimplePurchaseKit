@@ -235,13 +235,13 @@ extension Product.SubscriptionOffer.PaymentMode {
         }
     }
 }
+```
 
 #### Important: Handling the Transaction
 After a successful purchase, the `purchase(productID:offerID:)` method returns a verified `StoreKit.Transaction`. Your app is then responsible for finishing this transaction by calling `await transaction.finish()`.
 
 - **For Subscriptions and Non-Consumables:** The library automatically updates the `entitlementStatus`. You simply need to call `finish()` on the transaction.
 - **For Consumables:** This pattern is critical. You must first grant the content to the user (e.g., add coins to their balance) and *then* call `finish()`. Finishing the transaction removes it from the payment queue, preventing the user from being granted the same content again on the next app launch.
-
 
 ### 3. Check Entitlement Status
 
@@ -274,9 +274,7 @@ struct PremiumFeaturesView: View {
             .font(.largeTitle)
     }
 }
-
 ```
-
 
 ### 4. Restore Purchases
 
@@ -352,7 +350,6 @@ import StoreKit // Required for Product.SubscriptionPeriod extension
 // let period: Product.SubscriptionPeriod = offer.period 
 // Text("Duration: \(period.localizedDescription)") // e.g., "1 month", "7 days"
 ```
-
 
 ### 8. Delegate for Logging & Events 
 
@@ -454,6 +451,7 @@ final class MyViewModelTests: XCTestCase {
         // No need to manually cancel, tearDown handles it.
     }
 }
+```
 
 ## 🏗️ Architecture
 
